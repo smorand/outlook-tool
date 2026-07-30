@@ -1,0 +1,195 @@
+"""End-to-end CLI tests using Typer's runner with a mocked Graph and cached token."""
+
+from __future__ import annotations
+
+import time
+from typing import TYPE_CHECKING
+
+import httpx
+import pytest
+import respx
+from typer.testing import CliRunner
+
+import outlook_mail
+from auth import TokenSet
+from outlook_mail import app
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+GRAPH = "https://graph.microsoft.com/v1.0"
+TOKEN_URL = "https://login.microsoftonline.com/common/oauth2/v2.0/token"
+DEVICECODE_URL = "https://login.microsoftonline.com/common/oauth2/v2.0/devicecode"
+
+runner = CliRunner()
+
+
+@pytest.fixture
+def cli_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Isolate cwd/logs and seed a valid cached token; return the cache path."""
+    monkeypatch.chdir(tmp_path)
+    cache = tmp_path / "token.json"
+    cache.write_text(TokenSet(access_token="tok", expires_at=time.time() + 3600).model_dump_json())
+    monkeypatch.setenv("OUTLOOK_MAIL_TOKEN_CACHE_PATH", str(cache))
+    return cache
+
+
+def test_version() -> None:
+    """The version command prints the package version."""
+    result = runner.invoke(app, ["version"])
+    assert result.exit_code == 0
+    assert result.stdout.strip()
+
+
+@respx.mock
+def test_send_command(cli_env: Path) -> None:
+    """send with a cached token issues a sendMail call and reports success."""
+    route = respx.post(f"{GRAPH}/me/sendMail").mock(return_value=httpx.Response(202))
+    result = runner.invoke(
+        app,
+        ["send", "--to", "seb.morand@gmail.com", "--subject", "Hi", "--body", "<b>x</b>"],
+    )
+    assert result.exit_code == 0, result.stdout
+    assert route.called
+
+
+def test_send_requires_body(cli_env: Path) -> None:
+    """send without a body exits with code 2."""
+    result = runner.invoke(app, ["send", "--to", "a@b.com", "--subject", "s"])
+    assert result.exit_code == 2
+
+
+def test_login_required_without_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A command with no cached token exits with the login-required code."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("OUTLOOK_MAIL_TOKEN_CACHE_PATH", str(tmp_path / "absent.json"))
+    result = runner.invoke(app, ["mail", "list"])
+    assert result.exit_code == 2
+
+
+@respx.mock
+def test_mail_list_command(cli_env: Path) -> None:
+    """mail list renders received messages from Graph."""
+    respx.get(url__regex=r".*/me/mailFolders/inbox/messages.*").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "value": [
+                    {
+                        "id": "A",
+                        "subject": "Hello",
+                        "from": {"emailAddress": {"address": "x@y.com"}},
+                        "receivedDateTime": "2026-07-29T10:00:00Z",
+                        "bodyPreview": "hi",
+                        "hasAttachments": False,
+                    }
+                ]
+            },
+        )
+    )
+    result = runner.invoke(app, ["mail", "list", "--top", "5"])
+    assert result.exit_code == 0, result.stdout
+    assert "Hello" in result.stdout
+
+
+@respx.mock
+def test_mail_read_command(cli_env: Path) -> None:
+    """mail read prints the message body."""
+    respx.get(url__regex=r".*/me/messages/A.*").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "id": "A",
+                "subject": "Hello",
+                "from": {"emailAddress": {"address": "x@y.com"}},
+                "receivedDateTime": "2026-07-29T10:00:00Z",
+                "body": {"contentType": "HTML", "content": "the-body"},
+            },
+        )
+    )
+    result = runner.invoke(app, ["mail", "read", "A"])
+    assert result.exit_code == 0, result.stdout
+    assert "the-body" in result.stdout
+
+
+@respx.mock
+def test_cal_add_and_list_and_update_and_delete(cli_env: Path) -> None:
+    """cal add/list/update/delete drive the calendar service end to end."""
+    respx.post(f"{GRAPH}/me/events").mock(return_value=httpx.Response(201, json={"id": "E1"}))
+    respx.get(url__regex=r".*/me/calendarView.*").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "value": [
+                    {
+                        "id": "E1",
+                        "subject": "Nuit",
+                        "start": {"dateTime": "2026-07-29T03:00:00.0000000", "timeZone": "Europe/Paris"},
+                        "end": {"dateTime": "2026-07-29T03:30:00.0000000", "timeZone": "Europe/Paris"},
+                        "organizer": {"emailAddress": {"address": "me@corp.com"}},
+                    }
+                ]
+            },
+        )
+    )
+    respx.patch(f"{GRAPH}/me/events/E1").mock(return_value=httpx.Response(200, json={"id": "E1"}))
+    respx.delete(f"{GRAPH}/me/events/E1").mock(return_value=httpx.Response(204))
+
+    add = runner.invoke(
+        app,
+        [
+            "cal",
+            "add",
+            "--subject",
+            "Nuit",
+            "--start",
+            "2026-07-29T03:00:00",
+            "--end",
+            "2026-07-29T03:30:00",
+            "--attendee",
+            "seb.morand@gmail.com",
+        ],
+    )
+    assert add.exit_code == 0, add.stdout
+    assert "E1" in add.stdout
+
+    listed = runner.invoke(app, ["cal", "list", "--start", "2026-07-29T00:00:00", "--end", "2026-07-30T00:00:00"])
+    assert listed.exit_code == 0, listed.stdout
+    assert "Nuit" in listed.stdout
+
+    updated = runner.invoke(app, ["cal", "update", "E1", "--subject", "Nuit v2"])
+    assert updated.exit_code == 0, updated.stdout
+
+    deleted = runner.invoke(app, ["cal", "delete", "E1"])
+    assert deleted.exit_code == 0, deleted.stdout
+
+
+def test_cal_update_requires_change(cli_env: Path) -> None:
+    """cal update with no field to change exits with code 2."""
+    result = runner.invoke(app, ["cal", "update", "E1"])
+    assert result.exit_code == 2
+
+
+@respx.mock
+def test_login_command(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """login runs the device-code flow and caches a token (browser open patched)."""
+    monkeypatch.chdir(tmp_path)
+    cache = tmp_path / "token.json"
+    monkeypatch.setenv("OUTLOOK_MAIL_TOKEN_CACHE_PATH", str(cache))
+    monkeypatch.setattr(outlook_mail.webbrowser, "open", lambda _url: True)
+    respx.post(DEVICECODE_URL).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "device_code": "DEV",
+                "user_code": "ABCD",
+                "verification_uri": "https://microsoft.com/devicelogin",
+                "expires_in": 900,
+                "interval": 0,
+            },
+        )
+    )
+    respx.post(TOKEN_URL).mock(return_value=httpx.Response(200, json={"access_token": "issued", "expires_in": 3600}))
+    result = runner.invoke(app, ["login"])
+    assert result.exit_code == 0, result.stdout
+    assert cache.exists()

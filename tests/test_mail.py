@@ -1,0 +1,111 @@
+"""Tests for the mail service (send and read)."""
+
+from __future__ import annotations
+
+import json
+from typing import TYPE_CHECKING
+
+import httpx
+import respx
+
+from graph_client import GraphClient
+from models import Attachment, OutgoingMessage, Recipient
+from services.mail import MailService
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from config import Settings
+    from tests.conftest import StubAuth
+
+GRAPH = "https://graph.microsoft.com/v1.0"
+
+
+def _message(**overrides: object) -> OutgoingMessage:
+    base = {
+        "subject": "Test",
+        "body": "<b>hi</b>",
+        "to": [Recipient(email="seb.morand@gmail.com")],
+    }
+    base.update(overrides)
+    return OutgoingMessage(**base)  # type: ignore[arg-type]
+
+
+@respx.mock
+async def test_send_inline_small_message(settings: Settings, stub_auth: StubAuth) -> None:
+    """A message without large attachments is sent via a single sendMail call."""
+    route = respx.post(f"{GRAPH}/me/sendMail").mock(return_value=httpx.Response(202))
+    async with httpx.AsyncClient() as client:
+        service = MailService(settings, GraphClient(settings, stub_auth, client))
+        await service.send(_message())
+    assert route.called
+    body = json.loads(route.calls.last.request.content)
+    assert body["saveToSentItems"] is True
+    assert body["message"]["subject"] == "Test"
+    assert body["message"]["toRecipients"][0]["emailAddress"]["address"] == "seb.morand@gmail.com"
+
+
+@respx.mock
+async def test_send_via_draft_with_upload_session(settings: Settings, stub_auth: StubAuth, tmp_path: Path) -> None:
+    """Large attachments trigger the draft + upload-session path.
+
+    settings caps inline at 10 bytes and chunk size at 4, so a 20-byte file goes
+    through createUploadSession with multiple chunked PUTs, while a 5-byte file is
+    posted directly as a fileAttachment.
+    """
+    small = tmp_path / "small.txt"
+    small.write_bytes(b"12345")
+    large = tmp_path / "large.bin"
+    large.write_bytes(b"0123456789ABCDEFGHIJ")  # 20 bytes
+
+    draft = respx.post(f"{GRAPH}/me/messages").mock(return_value=httpx.Response(201, json={"id": "MSG"}))
+    add_small = respx.post(f"{GRAPH}/me/messages/MSG/attachments").mock(return_value=httpx.Response(201, json={}))
+    create_session = respx.post(f"{GRAPH}/me/messages/MSG/attachments/createUploadSession").mock(
+        return_value=httpx.Response(201, json={"uploadUrl": "https://upload.example/session"})
+    )
+    put_chunk = respx.put("https://upload.example/session").mock(return_value=httpx.Response(200, json={}))
+    send_draft = respx.post(f"{GRAPH}/me/messages/MSG/send").mock(return_value=httpx.Response(202))
+
+    message = _message(
+        attachments=[Attachment.from_path(small), Attachment.from_path(large)],
+    )
+    async with httpx.AsyncClient() as client:
+        service = MailService(settings, GraphClient(settings, stub_auth, client))
+        await service.send(message)
+
+    assert draft.called
+    assert add_small.called
+    assert create_session.called
+    assert send_draft.called
+    # 20 bytes / 4-byte chunks = 5 PUTs, none carrying an Authorization header.
+    assert put_chunk.call_count == 5
+    first_chunk = put_chunk.calls[0].request
+    assert "Authorization" not in first_chunk.headers
+    assert first_chunk.headers["Content-Range"] == "bytes 0-3/20"
+
+
+@respx.mock
+async def test_list_messages(settings: Settings, stub_auth: StubAuth) -> None:
+    """list_messages parses Graph values into summaries."""
+    respx.get(url__regex=r".*/me/mailFolders/inbox/messages.*").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "value": [
+                    {
+                        "id": "A",
+                        "subject": "Hello",
+                        "from": {"emailAddress": {"address": "x@y.com"}},
+                        "receivedDateTime": "2026-07-29T10:00:00Z",
+                        "bodyPreview": "hi",
+                        "hasAttachments": False,
+                    }
+                ]
+            },
+        )
+    )
+    async with httpx.AsyncClient() as client:
+        service = MailService(settings, GraphClient(settings, stub_auth, client))
+        messages = await service.list_messages(top=5)
+    assert len(messages) == 1
+    assert messages[0].sender == "x@y.com"
