@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import webbrowser
 from collections.abc import Awaitable, Callable
@@ -25,7 +26,9 @@ from tracing import configure_tracing
 from version import __version__
 
 logger = logging.getLogger(__name__)
-console = Console()
+# soft_wrap avoids hard line breaks that would corrupt machine-readable output
+# (message/event IDs) when stdout is not a TTY.
+console = Console(soft_wrap=True)
 
 app = typer.Typer(help="Send/read Outlook mail and manage calendar via Microsoft Graph (no client secret).")
 mail_app = typer.Typer(help="Read mail.")
@@ -133,12 +136,16 @@ def mail_list(
     ctx: typer.Context,
     top: Annotated[int, typer.Option("--top", "-n", help="Number of messages")] = 10,
     folder: Annotated[str, typer.Option("--folder", "-f", help="Mail folder")] = "inbox",
+    as_json: Annotated[bool, typer.Option("--json", help="Machine-readable JSON with full ids")] = False,
 ) -> None:
     """List recent messages in a folder."""
     settings: Settings = ctx.obj
 
     async def _do(_auth: Authenticator, mail: MailService, _cal: CalendarService) -> None:
         messages = await mail.list_messages(top=top, folder=folder)
+        if as_json:
+            typer.echo(json.dumps([m.model_dump() for m in messages], ensure_ascii=False))
+            return
         table = Table(title=f"{folder} (latest {len(messages)})")
         table.add_column("received", style="cyan", no_wrap=True)
         table.add_column("from", style="magenta")
@@ -175,12 +182,16 @@ def cal_list(
     start: Annotated[str, typer.Option("--start", help="Window start, ISO 8601")],
     end: Annotated[str, typer.Option("--end", help="Window end, ISO 8601")],
     tz: Annotated[str, typer.Option("--tz", help="Time zone")] = "Europe/Paris",
+    as_json: Annotated[bool, typer.Option("--json", help="Machine-readable JSON with full ids")] = False,
 ) -> None:
     """List events in a time window."""
     settings: Settings = ctx.obj
 
     async def _do(_auth: Authenticator, _mail: MailService, cal: CalendarService) -> None:
         events = await cal.list_events(start=start, end=end, time_zone=tz)
+        if as_json:
+            typer.echo(json.dumps([e.model_dump() for e in events], ensure_ascii=False))
+            return
         table = Table(title=f"events {start} -> {end}")
         table.add_column("start", style="cyan", no_wrap=True)
         table.add_column("end", style="cyan", no_wrap=True)

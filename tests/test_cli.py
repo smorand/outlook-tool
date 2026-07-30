@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 from typing import TYPE_CHECKING
 
@@ -90,6 +91,61 @@ def test_mail_list_command(cli_env: Path) -> None:
     result = runner.invoke(app, ["mail", "list", "--top", "5"])
     assert result.exit_code == 0, result.stdout
     assert "Hello" in result.stdout
+
+
+@respx.mock
+def test_mail_list_json_has_full_id(cli_env: Path) -> None:
+    """mail list --json emits parseable JSON with untruncated ids."""
+    long_id = "A" * 60
+    respx.get(url__regex=r".*/me/mailFolders/inbox/messages.*").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "value": [
+                    {
+                        "id": long_id,
+                        "subject": "Hello",
+                        "from": {"emailAddress": {"address": "x@y.com"}},
+                        "receivedDateTime": "2026-07-29T10:00:00Z",
+                        "bodyPreview": "hi",
+                        "hasAttachments": False,
+                    }
+                ]
+            },
+        )
+    )
+    result = runner.invoke(app, ["mail", "list", "--json"])
+    assert result.exit_code == 0, result.stdout
+    parsed = json.loads(result.stdout)
+    assert parsed[0]["id"] == long_id
+
+
+@respx.mock
+def test_cal_list_json_has_full_id(cli_env: Path) -> None:
+    """cal list --json emits parseable JSON with untruncated ids."""
+    long_id = "E" * 80
+    respx.get(url__regex=r".*/me/calendarView.*").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "value": [
+                    {
+                        "id": long_id,
+                        "subject": "Nuit",
+                        "start": {"dateTime": "2026-07-29T03:00:00.0000000", "timeZone": "Europe/Paris"},
+                        "end": {"dateTime": "2026-07-29T03:30:00.0000000", "timeZone": "Europe/Paris"},
+                        "organizer": {"emailAddress": {"address": "me@corp.com"}},
+                    }
+                ]
+            },
+        )
+    )
+    result = runner.invoke(
+        app, ["cal", "list", "--start", "2026-07-29T00:00:00", "--end", "2026-07-30T00:00:00", "--json"]
+    )
+    assert result.exit_code == 0, result.stdout
+    parsed = json.loads(result.stdout)
+    assert parsed[0]["id"] == long_id
 
 
 @respx.mock

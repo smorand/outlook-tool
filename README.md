@@ -43,6 +43,7 @@ outlook-mail send --to a@b.com -s "Note" --body-file note.txt --text
 
 # 3. Lecture
 outlook-mail mail list --top 10
+outlook-mail mail list --json          # sortie JSON avec ids complets (scripting)
 outlook-mail mail read <message-id>
 
 # 4. Calendrier
@@ -50,11 +51,14 @@ outlook-mail cal add --subject "Nuit" \
   --start 2026-07-29T03:00:00 --end 2026-07-29T03:30:00 \
   --attendee seb.morand@gmail.com
 outlook-mail cal list --start 2026-07-29T00:00:00 --end 2026-07-30T00:00:00
+outlook-mail cal list --start ... --end ... --json   # ids complets pour update/delete
 outlook-mail cal update <event-id> --subject "Nuit v2"
 outlook-mail cal delete <event-id>
 ```
 
-Options globales: `-v` (debug), `-q` (warnings only).
+Options globales: `-v` (debug), `-q` (warnings only). Les tableaux tronquent les ids pour
+la lisibilité ; utilise `--json` sur `mail list` / `cal list` pour récupérer les ids complets
+à passer à `read` / `update` / `delete`.
 
 ## Pièces jointes lourdes
 
