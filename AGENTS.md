@@ -58,6 +58,8 @@ Couverture actuelle ~94%.
 
 ## Documentation Index
 
+- `.agent_docs/auth-client-id.md` : risque de dépendance au client ID public Microsoft,
+  détection d'un blocage tenant (codes AADSTS) et fallbacks.
 - `.agent_docs/e2e-testing.md` : protocole de vérification e2e (mail + calendrier) via
   `seb.morand@gmail.com` et email-manager.
 - `.agent_docs/python.md` : standards de code Python.

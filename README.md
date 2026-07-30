@@ -82,8 +82,18 @@ make run ARGS='--help'
 
 Voir `AGENTS.md` pour l'architecture et `.agent_docs/` pour les détails.
 
-## Limites
+## Limites et risque principal
 
-- Dépend d'un client ID Microsoft public: un tenant très strict peut le bloquer
-  (politique de consentement d'apps). Testé OK sur un tenant M365 verrouillé standard.
-- Non affilié à Microsoft. Usage personnel.
+**Dépendance à un client ID Microsoft public.** L'outil emprunte le client ID public de
+Microsoft Office plutôt que d'enregistrer sa propre app. Un tenant peut bloquer ce client
+(politique de consentement d'apps, Conditional Access, blocage du device code flow).
+Le client Office passe sur la plupart des tenants et a été testé OK sur un M365 verrouillé
+standard, mais ce n'est pas garanti et un admin peut durcir la politique à tout moment:
+l'outil cesserait alors de fonctionner sans changement de code.
+
+Détection, codes d'erreur AADSTS et fallbacks (autre client ID, ta propre app publique,
+plan B navigateur) sont détaillés dans **`.agent_docs/auth-client-id.md`**. La solution
+stable qui supprime ce risque: enregistrer ta propre app publique (sans secret) et poser
+`OUTLOOK_MAIL_CLIENT_ID=<ton-app-id>`.
+
+Autres: non affilié à Microsoft, usage personnel.
