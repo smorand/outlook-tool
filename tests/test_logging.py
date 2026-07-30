@@ -38,3 +38,10 @@ def test_setup_logging_vv_sets_debug(tmp_path: Path) -> None:
     """Two -v flags lower the effective level to DEBUG."""
     setup_logging(app_name="probe2", verbosity=2, log_dir=tmp_path)
     assert logging.getLogger().getEffectiveLevel() == logging.DEBUG
+
+
+def test_setup_logging_mutes_http_loggers(tmp_path: Path) -> None:
+    """httpx/httpcore loggers are muted to avoid leaking upload-session URLs."""
+    setup_logging(app_name="probe3", verbosity=2, log_dir=tmp_path)
+    assert logging.getLogger("httpx").level == logging.WARNING
+    assert logging.getLogger("httpcore").level == logging.WARNING

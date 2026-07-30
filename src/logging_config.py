@@ -68,3 +68,8 @@ def setup_logging(
         handlers=[console_handler, file_handler],
         force=True,
     )
+
+    # Mute noisy HTTP client loggers: their INFO dumps full request URLs, which for
+    # upload sessions embed a token. Keep our own INFO/DEBUG meaningful.
+    for noisy in ("httpx", "httpcore"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
