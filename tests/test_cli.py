@@ -149,6 +149,49 @@ def test_cal_list_json_has_full_id(cli_env: Path) -> None:
 
 
 @respx.mock
+def test_mail_search_command(cli_env: Path) -> None:
+    """mail search renders matching messages."""
+    respx.get(url__regex=r".*/me/messages\?.*").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "value": [
+                    {
+                        "id": "S1",
+                        "subject": "Report Q3",
+                        "from": {"emailAddress": {"address": "alice@corp.com"}},
+                        "receivedDateTime": "2026-07-29T10:00:00Z",
+                        "bodyPreview": "x",
+                        "hasAttachments": False,
+                    }
+                ]
+            },
+        )
+    )
+    result = runner.invoke(app, ["mail", "search", "report"])
+    assert result.exit_code == 0, result.stdout
+    assert "Report Q3" in result.stdout
+
+
+@respx.mock
+def test_mail_archive_command(cli_env: Path) -> None:
+    """mail archive moves the message to Archive and prints the new id."""
+    respx.post(f"{GRAPH}/me/messages/MSG/move").mock(return_value=httpx.Response(201, json={"id": "NEW"}))
+    result = runner.invoke(app, ["mail", "archive", "MSG"])
+    assert result.exit_code == 0, result.stdout
+    assert "NEW" in result.stdout
+
+
+@respx.mock
+def test_mail_move_command(cli_env: Path) -> None:
+    """mail move moves the message to an arbitrary folder."""
+    route = respx.post(f"{GRAPH}/me/messages/MSG/move").mock(return_value=httpx.Response(201, json={"id": "NEW"}))
+    result = runner.invoke(app, ["mail", "move", "MSG", "deleteditems"])
+    assert result.exit_code == 0, result.stdout
+    assert json.loads(route.calls.last.request.content)["destinationId"] == "deleteditems"
+
+
+@respx.mock
 def test_mail_read_command(cli_env: Path) -> None:
     """mail read prints the message body."""
     respx.get(url__regex=r".*/me/messages/A.*").mock(

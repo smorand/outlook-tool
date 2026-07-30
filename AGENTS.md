@@ -21,7 +21,7 @@ make install   # installe la commande 'outlook-mail' (uv tool)
 ## Architecture (src/, layout flat)
 
 - `outlook_mail.py` : entry point Typer. Commandes: `login`, `send`, `version`,
-  `mail list|read`, `cal add|list|update|delete`. Injection de dépendances dans
+  `mail list|read|search|archive|move`, `cal add|list|update|delete`. Injection de dépendances dans
   `_with_services` (crée httpx client, Authenticator, GraphClient, services).
 - `config.py` : `Settings` (pydantic-settings, prefix `OUTLOOK_MAIL_`). Client ID Office
   public par défaut, scopes, chemin du cache token, seuils pièces jointes.
@@ -32,7 +32,8 @@ make install   # installe la commande 'outlook-mail' (uv tool)
 - `models.py` : value models pydantic (`Recipient`, `Attachment`, `OutgoingMessage`,
   `MailSummary`, `CalendarEventInput`, `CalendarEventSummary`) + sérialisation Graph.
 - `services/mail.py` : `MailService`. Envoi inline (<= seuil) ou draft + upload session
-  (> seuil). `list_messages`, `get_message`.
+  (> seuil). `list_messages`, `search_messages` ($search), `get_message`,
+  `move_message`/`archive_message` (POST /me/messages/{id}/move, destinationId nom connu ou id).
 - `services/calendar.py` : `CalendarService`. `list_events` (calendarView + Prefer tz),
   `create_event`, `update_event`, `delete_event`.
 - `tracing.py`, `logging_config.py`, `version.py` : depuis le template python.

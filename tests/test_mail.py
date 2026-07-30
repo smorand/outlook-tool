@@ -85,6 +85,47 @@ async def test_send_via_draft_with_upload_session(settings: Settings, stub_auth:
 
 
 @respx.mock
+async def test_search_messages(settings: Settings, stub_auth: StubAuth) -> None:
+    """search_messages issues a $search query and parses summaries."""
+    route = respx.get(url__regex=r".*/me/messages\?.*").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "value": [
+                    {
+                        "id": "S1",
+                        "subject": "Report Q3",
+                        "from": {"emailAddress": {"address": "alice@corp.com"}},
+                        "receivedDateTime": "2026-07-29T10:00:00Z",
+                        "bodyPreview": "see attached",
+                        "hasAttachments": True,
+                    }
+                ]
+            },
+        )
+    )
+    async with httpx.AsyncClient() as client:
+        service = MailService(settings, GraphClient(settings, stub_auth, client))
+        messages = await service.search_messages("report", top=5)
+    assert len(messages) == 1
+    assert messages[0].subject == "Report Q3"
+    assert "%24search" in str(route.calls.last.request.url)
+
+
+@respx.mock
+async def test_move_and_archive_message(settings: Settings, stub_auth: StubAuth) -> None:
+    """move_message posts destinationId; archive_message targets the Archive folder."""
+    route = respx.post(f"{GRAPH}/me/messages/MSG/move").mock(return_value=httpx.Response(201, json={"id": "NEW"}))
+    async with httpx.AsyncClient() as client:
+        service = MailService(settings, GraphClient(settings, stub_auth, client))
+        moved = await service.move_message("MSG", "deleteditems")
+        assert moved["id"] == "NEW"
+        assert json.loads(route.calls.last.request.content)["destinationId"] == "deleteditems"
+        await service.archive_message("MSG")
+        assert json.loads(route.calls.last.request.content)["destinationId"] == "archive"
+
+
+@respx.mock
 async def test_list_messages(settings: Settings, stub_auth: StubAuth) -> None:
     """list_messages parses Graph values into summaries."""
     respx.get(url__regex=r".*/me/mailFolders/inbox/messages.*").mock(

@@ -97,6 +97,33 @@ class MailService:
         items = response.json().get("value", [])
         return [MailSummary.from_graph(item) for item in items]
 
+    async def search_messages(self, query: str, *, top: int = 10) -> list[MailSummary]:
+        """Full-text search across the mailbox via Graph $search.
+
+        Accepts free text or KQL-style terms (e.g. 'from:alice subject:report').
+        $search cannot be combined with $orderby; Graph returns results by relevance.
+        """
+        params = urlencode({"$search": f'"{query}"', "$top": top, "$select": _LIST_SELECT}, safe=" ,")
+        response = await self._graph.get(f"/me/messages?{params}")
+        items = response.json().get("value", [])
+        return [MailSummary.from_graph(item) for item in items]
+
+    async def move_message(self, message_id: str, destination: str) -> dict[str, Any]:
+        """Move a message to another folder, returning the moved copy (new id).
+
+        destination accepts a folder id or a well-known name (archive, deleteditems,
+        inbox, junkemail, drafts, sentitems).
+        """
+        with trace_span("mail.move", attributes={"mail.destination": destination}):
+            response = await self._graph.post(f"/me/messages/{message_id}/move", json={"destinationId": destination})
+            moved: dict[str, Any] = response.json()
+            logger.info("moved message %s to %s", message_id, destination)
+            return moved
+
+    async def archive_message(self, message_id: str) -> dict[str, Any]:
+        """Archive a message (move to the well-known Archive folder)."""
+        return await self.move_message(message_id, "archive")
+
     async def get_message(self, message_id: str) -> dict[str, Any]:
         """Fetch a single message with its full body."""
         query = urlencode({"$select": _READ_SELECT}, safe=" ,")

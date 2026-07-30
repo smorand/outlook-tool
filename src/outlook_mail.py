@@ -75,6 +75,19 @@ def main(
     ctx.obj = settings
 
 
+def _render_mail_table(messages: list[Any], title: str) -> None:
+    """Render a list of MailSummary as a rich table."""
+    table = Table(title=title)
+    table.add_column("received", style="cyan", no_wrap=True)
+    table.add_column("from", style="magenta")
+    table.add_column("subject")
+    table.add_column("att", justify="center")
+    table.add_column("id", style="dim", no_wrap=True)
+    for msg in messages:
+        table.add_row(msg.received, msg.sender, msg.subject, "yes" if msg.has_attachments else "", msg.id[:16])
+    console.print(table)
+
+
 @app.command()
 def version() -> None:
     """Print the version."""
@@ -150,15 +163,57 @@ def mail_list(
         if as_json:
             typer.echo(json.dumps([m.model_dump() for m in messages], ensure_ascii=False))
             return
-        table = Table(title=f"{folder} (latest {len(messages)})")
-        table.add_column("received", style="cyan", no_wrap=True)
-        table.add_column("from", style="magenta")
-        table.add_column("subject")
-        table.add_column("att", justify="center")
-        table.add_column("id", style="dim", no_wrap=True)
-        for msg in messages:
-            table.add_row(msg.received, msg.sender, msg.subject, "yes" if msg.has_attachments else "", msg.id[:16])
-        console.print(table)
+        _render_mail_table(messages, f"{folder} (latest {len(messages)})")
+
+    _run(settings, _do)
+
+
+@mail_app.command("search")
+def mail_search(
+    ctx: typer.Context,
+    query: Annotated[str, typer.Argument(help="Search text or KQL terms, e.g. 'from:alice subject:report'")],
+    top: Annotated[int, typer.Option("--top", "-n", help="Max results")] = 10,
+    as_json: Annotated[bool, typer.Option("--json", help="Machine-readable JSON with full ids")] = False,
+) -> None:
+    """Full-text search across the mailbox."""
+    settings: Settings = ctx.obj
+
+    async def _do(_auth: Authenticator, mail: MailService, _cal: CalendarService) -> None:
+        messages = await mail.search_messages(query, top=top)
+        if as_json:
+            typer.echo(json.dumps([m.model_dump() for m in messages], ensure_ascii=False))
+            return
+        _render_mail_table(messages, f"search '{query}' ({len(messages)})")
+
+    _run(settings, _do)
+
+
+@mail_app.command("archive")
+def mail_archive(ctx: typer.Context, message_id: Annotated[str, typer.Argument(help="Message id")]) -> None:
+    """Archive a message (move to the Archive folder)."""
+    settings: Settings = ctx.obj
+
+    async def _do(_auth: Authenticator, mail: MailService, _cal: CalendarService) -> None:
+        moved = await mail.archive_message(message_id)
+        console.print(f"[green]Archived[/green] new id={moved.get('id', '')}")
+
+    _run(settings, _do)
+
+
+@mail_app.command("move")
+def mail_move(
+    ctx: typer.Context,
+    message_id: Annotated[str, typer.Argument(help="Message id")],
+    destination: Annotated[
+        str, typer.Argument(help="Folder id or well-known name (archive, deleteditems, inbox, ...)")
+    ],
+) -> None:
+    """Move a message to another folder."""
+    settings: Settings = ctx.obj
+
+    async def _do(_auth: Authenticator, mail: MailService, _cal: CalendarService) -> None:
+        moved = await mail.move_message(message_id, destination)
+        console.print(f"[green]Moved[/green] to {destination}, new id={moved.get('id', '')}")
 
     _run(settings, _do)
 

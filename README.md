@@ -41,10 +41,13 @@ outlook-mail send \
 # corps depuis un fichier, texte brut
 outlook-mail send --to a@b.com -s "Note" --body-file note.txt --text
 
-# 3. Lecture
+# 3. Lecture / recherche / rangement
 outlook-mail mail list --top 10
 outlook-mail mail list --json          # sortie JSON avec ids complets (scripting)
 outlook-mail mail read <message-id>
+outlook-mail mail search "from:alice subject:report" --top 10
+outlook-mail mail archive <message-id>                 # -> dossier Archive
+outlook-mail mail move <message-id> deleteditems       # dossier (nom connu ou id)
 
 # 4. Calendrier
 outlook-mail cal add --subject "Nuit" \
