@@ -1,46 +1,51 @@
-"""Reusable logging configuration with colors and file output."""
+"""Logging configuration: quiet console by default, verbosity via -v/-vv.
+
+Verbosity mapping (count of -v flags):
+    0  -> ERROR (default, quiet)
+    1  -> INFO
+    2+ -> DEBUG
+
+A file handler always writes <app_name>.log into the given log_dir (the app passes
+its cache dir), so a trace is available on disk regardless of console verbosity.
+"""
 
 import logging
 from pathlib import Path
-from typing import Literal
 
 from rich.console import Console
 from rich.logging import RichHandler
-
-LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 
 LOG_FORMAT = "%(module)s.%(funcName)s: %(message)s"
 FILE_LOG_FORMAT = "%(asctime)s [%(levelname)s] %(name)s %(module)s.%(funcName)s: %(message)s"
 
 
+def level_for_verbosity(verbosity: int) -> str:
+    """Map a -v count to a logging level name."""
+    if verbosity <= 0:
+        return "ERROR"
+    if verbosity == 1:
+        return "INFO"
+    return "DEBUG"
+
+
 def setup_logging(
     app_name: str = "app",
-    level: LogLevel = "INFO",
     *,
-    verbose: bool = False,
-    quiet: bool = False,
+    verbosity: int = 0,
     log_dir: Path | None = None,
 ) -> None:
-    """Configure logging with colors (console) and file output.
-
-    Writes logs to <app_name>.log in the specified directory.
-    Console output uses rich for colored, human-friendly display.
+    """Configure console + file logging.
 
     Args:
-        app_name: Application name, used for log file naming (<app_name>.log)
-        level: Base log level (default: INFO)
-        verbose: If True, set level to DEBUG (overrides level)
-        quiet: If True, set level to WARNING (overrides level and verbose)
-        log_dir: Directory for log files (default: current working directory)
+        app_name: Used for the log file name (<app_name>.log).
+        verbosity: Count of -v flags. 0=ERROR (quiet), 1=INFO, 2+=DEBUG.
+        log_dir: Directory for the log file (created if missing). Defaults to cwd.
     """
-    if quiet:
-        effective_level = "WARNING"
-    elif verbose:
-        effective_level = "DEBUG"
-    else:
-        effective_level = level
+    effective_level = level_for_verbosity(verbosity)
 
-    log_path = (log_dir or Path.cwd()) / f"{app_name}.log"
+    target_dir = log_dir or Path.cwd()
+    target_dir.mkdir(parents=True, exist_ok=True)
+    log_path = target_dir / f"{app_name}.log"
 
     console = Console(stderr=True)
     console_handler = RichHandler(

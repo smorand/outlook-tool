@@ -61,13 +61,17 @@ def _run[T](settings: Settings, fn: ServiceFn[T]) -> T:
 @app.callback()
 def main(
     ctx: typer.Context,
-    verbose: Annotated[bool, typer.Option("--verbose", "-v", help="Enable debug logging")] = False,
-    quiet: Annotated[bool, typer.Option("--quiet", "-q", help="Only warnings and errors")] = False,
+    verbose: Annotated[
+        int,
+        typer.Option(
+            "--verbose", "-v", count=True, help="Increase verbosity: -v info, -vv debug (default: errors only)"
+        ),
+    ] = 0,
 ) -> None:
     """Configure logging/tracing and share settings with subcommands."""
     settings = Settings()
-    setup_logging(app_name=settings.app_name, verbose=verbose, quiet=quiet)
-    configure_tracing(app_name=settings.app_name)
+    setup_logging(app_name=settings.app_name, verbosity=verbose, log_dir=settings.log_dir)
+    configure_tracing(app_name=settings.app_name, log_dir=settings.log_dir)
     ctx.obj = settings
 
 

@@ -58,3 +58,8 @@ class Settings(BaseSettings):
     attachment_inline_limit: int = 3_000_000
     # Upload-session chunk size MUST be a multiple of 320 KiB (327680 bytes).
     upload_chunk_size: int = 3_276_800
+
+    @property
+    def log_dir(self) -> Path:
+        """Directory for log files (app + OpenTelemetry), alongside the token cache."""
+        return self.token_cache_path.parent

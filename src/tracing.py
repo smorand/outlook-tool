@@ -72,7 +72,9 @@ def configure_tracing(
         app_name: Application name, used for service name and log file (<app_name>-otel.log)
         log_dir: Directory for the JSONL log file (default: current working directory)
     """
-    otel_path = (log_dir or Path.cwd()) / f"{app_name}-otel.log"
+    target_dir = log_dir or Path.cwd()
+    target_dir.mkdir(parents=True, exist_ok=True)
+    otel_path = target_dir / f"{app_name}-otel.log"
 
     resource = Resource.create({"service.name": app_name})
     provider = TracerProvider(resource=resource)

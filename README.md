@@ -56,7 +56,11 @@ outlook-mail cal update <event-id> --subject "Nuit v2"
 outlook-mail cal delete <event-id>
 ```
 
-Options globales: `-v` (debug), `-q` (warnings only). Les tableaux tronquent les ids pour
+Verbosité (silencieux par défaut): sans flag = erreurs seulement, `-v` = info, `-vv` = debug.
+Les logs (app + OpenTelemetry) sont toujours écrits dans `~/.cache/outlook-mail/`
+(`outlook-mail.log`, `outlook-mail-otel.log`), quel que soit le niveau console.
+
+Les tableaux tronquent les ids pour
 la lisibilité ; utilise `--json` sur `mail list` / `cal list` pour récupérer les ids complets
 à passer à `read` / `update` / `delete`.
 

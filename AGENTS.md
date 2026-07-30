@@ -44,6 +44,8 @@ make install   # installe la commande 'outlook-mail' (uv tool)
   pydantic (champ `Attachment.path`) ou Typer (options `--attach`) exigent le symbole au
   runtime (noqa TC003 ciblé).
 - Jamais de secret en dur; le cache token vit hors du repo (`~/.cache/outlook-mail/`).
+- Logs silencieux par défaut: sans flag = ERROR, `-v` = INFO, `-vv` = DEBUG (compteur Typer).
+  Fichiers app + otel toujours écrits dans `~/.cache/outlook-mail/` (via `Settings.log_dir`).
 
 ## Quality Gate
 
