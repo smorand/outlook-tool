@@ -557,18 +557,21 @@ def test_mail_list_json_includes_is_meeting_request(cli_env: Path) -> None:
 @respx.mock
 def test_mail_get_json_exposes_meeting_datetimes(cli_env: Path) -> None:
     """mail get --json includes startDateTime and endDateTime for meeting invites."""
-    respx.get(url__regex=r".*/me/messages/MEET9.*").mock(
-        return_value=httpx.Response(
-            200,
-            json={
-                "id": "MEET9",
-                "@odata.type": "#microsoft.graph.eventMessageRequest",
-                "subject": "Sync",
-                "startDateTime": {"dateTime": "2026-08-04T09:00:00.0000000", "timeZone": "Europe/Paris"},
-                "endDateTime": {"dateTime": "2026-08-04T10:00:00.0000000", "timeZone": "Europe/Paris"},
-                "body": {"contentType": "Text", "content": "join us"},
-            },
-        )
+    meeting_payload = {
+        "id": "MEET9",
+        "@odata.type": "#microsoft.graph.eventMessageRequest",
+        "subject": "Sync",
+        "startDateTime": {"dateTime": "2026-08-04T09:00:00.0000000", "timeZone": "Europe/Paris"},
+        "endDateTime": {"dateTime": "2026-08-04T10:00:00.0000000", "timeZone": "Europe/Paris"},
+        "body": {"contentType": "Text", "content": "join us"},
+    }
+    # First: plain message fetch to detect @odata.type
+    respx.get(url__regex=r".*/me/messages/MEET9\?").mock(
+        return_value=httpx.Response(200, json=meeting_payload)
+    )
+    # Second: cast URL fetch
+    respx.get(url__regex=r".*/me/messages/MEET9/microsoft\.graph\.eventMessage.*").mock(
+        return_value=httpx.Response(200, json=meeting_payload)
     )
     result = runner.invoke(app, ["mail", "get", "MEET9", "--json"])
     assert result.exit_code == 0, result.stdout

@@ -18,7 +18,9 @@ logger = logging.getLogger(__name__)
 
 _LIST_SELECT = "id,subject,from,receivedDateTime,bodyPreview,hasAttachments"
 _READ_SELECT = "id,subject,from,toRecipients,ccRecipients,receivedDateTime,body,hasAttachments"
-_READ_SELECT_MEETING = _READ_SELECT + ",startDateTime,endDateTime"
+# Note: startDateTime/endDateTime are NOT valid $select fields on /me/messages;
+# they are returned automatically by Graph when casting to eventMessage.
+_READ_SELECT_MEETING = _READ_SELECT
 
 
 class _TextExtractor(HTMLParser):
@@ -164,9 +166,16 @@ class MailService:
         response = await self._graph.get(f"/me/messages/{message_id}?{query}")
         item: dict[str, Any] = response.json()
         odata_type = str(item.get("@odata.type") or "")
-        if odata_type == "#microsoft.graph.eventMessageRequest":
+        if odata_type in (
+            "#microsoft.graph.eventMessageRequest",
+            "#microsoft.graph.eventMessage",
+        ):
+            # Use the OData cast segment: Graph returns startDateTime/endDateTime
+            # for event messages but rejects them in $select on /me/messages.
             query2 = urlencode({"$select": _READ_SELECT_MEETING}, safe=" ,")
-            response2 = await self._graph.get(f"/me/messages/{message_id}?{query2}")
+            response2 = await self._graph.get(
+                f"/me/messages/{message_id}/microsoft.graph.eventMessage?{query2}"
+            )
             item = response2.json()
         return item
 

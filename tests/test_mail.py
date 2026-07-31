@@ -262,26 +262,30 @@ async def test_body_as_text_passes_through_plain_text(settings: Settings, stub_a
 
 
 @respx.mock
-async def test_get_message_select_includes_meeting_fields(settings: Settings, stub_auth: StubAuth) -> None:
-    """get_message $select includes startDateTime and endDateTime."""
-    route = respx.get(url__regex=r".*/me/messages/MEET1.*").mock(
-        return_value=httpx.Response(
-            200,
-            json={
-                "id": "MEET1",
-                "@odata.type": "#microsoft.graph.eventMessageRequest",
-                "startDateTime": {"dateTime": "2026-08-04T09:00:00.0000000", "timeZone": "Europe/Paris"},
-                "endDateTime": {"dateTime": "2026-08-04T10:00:00.0000000", "timeZone": "Europe/Paris"},
-                "body": {"contentType": "Text", "content": "join us"},
-            },
-        )
+async def test_get_message_uses_eventmessage_cast_for_meeting(settings: Settings, stub_auth: StubAuth) -> None:
+    """get_message uses the OData cast URL for eventMessageRequest items (not $select fields)."""
+    meeting_payload = {
+        "id": "MEET1",
+        "@odata.type": "#microsoft.graph.eventMessageRequest",
+        "startDateTime": {"dateTime": "2026-08-04T09:00:00.0000000", "timeZone": "Europe/Paris"},
+        "endDateTime": {"dateTime": "2026-08-04T10:00:00.0000000", "timeZone": "Europe/Paris"},
+        "body": {"contentType": "Text", "content": "join us"},
+    }
+    # First request: plain /me/messages/{id} to detect @odata.type
+    respx.get(url__regex=r".*/me/messages/MEET1\?").mock(
+        return_value=httpx.Response(200, json=meeting_payload)
+    )
+    # Second request: cast URL — must NOT contain startDateTime in $select
+    cast_route = respx.get(url__regex=r".*/me/messages/MEET1/microsoft\.graph\.eventMessage.*").mock(
+        return_value=httpx.Response(200, json=meeting_payload)
     )
     async with httpx.AsyncClient() as client:
         service = MailService(settings, GraphClient(settings, stub_auth, client))
         item = await service.get_message("MEET1")
-    url_str = str(route.calls.last.request.url)
-    assert "startDateTime" in url_str
-    assert "endDateTime" in url_str
+    cast_url = str(cast_route.calls.last.request.url)
+    assert "microsoft.graph.eventMessage" in cast_url
+    assert "startDateTime" not in cast_url
+    assert "endDateTime" not in cast_url
     assert item["@odata.type"] == "#microsoft.graph.eventMessageRequest"
     assert isinstance(item["startDateTime"], dict)
 
