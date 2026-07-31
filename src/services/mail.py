@@ -17,9 +17,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _LIST_SELECT = "id,subject,from,receivedDateTime,bodyPreview,hasAttachments"
-_READ_SELECT = (
-    "id,subject,from,toRecipients,ccRecipients,receivedDateTime,body,hasAttachments,startDateTime,endDateTime"
-)
+_READ_SELECT = "id,subject,from,toRecipients,ccRecipients,receivedDateTime,body,hasAttachments"
+_READ_SELECT_MEETING = _READ_SELECT + ",startDateTime,endDateTime"
 
 
 class _TextExtractor(HTMLParser):
@@ -158,12 +157,17 @@ class MailService:
     async def get_message(self, message_id: str) -> dict[str, Any]:
         """Fetch a single message with its full body.
 
-        For eventMessageRequest items, startDateTime and endDateTime are included
-        when returned by Graph (direct properties of the EventMessage resource).
+        For eventMessageRequest items, startDateTime and endDateTime are fetched
+        in a second request and merged into the returned dict.
         """
         query = urlencode({"$select": _READ_SELECT}, safe=" ,")
         response = await self._graph.get(f"/me/messages/{message_id}?{query}")
         item: dict[str, Any] = response.json()
+        odata_type = str(item.get("@odata.type") or "")
+        if odata_type == "#microsoft.graph.eventMessageRequest":
+            query2 = urlencode({"$select": _READ_SELECT_MEETING}, safe=" ,")
+            response2 = await self._graph.get(f"/me/messages/{message_id}?{query2}")
+            item = response2.json()
         return item
 
     def body_as_text(self, item: dict[str, Any]) -> str:
