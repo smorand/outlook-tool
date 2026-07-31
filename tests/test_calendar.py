@@ -89,6 +89,33 @@ async def test_delete_event(settings: Settings, stub_auth: StubAuth) -> None:
 
 
 @respx.mock
+async def test_create_event_with_show_as(settings: Settings, stub_auth: StubAuth) -> None:
+    """create_event includes showAs in the Graph payload when provided."""
+    route = respx.post(f"{GRAPH}/me/events").mock(return_value=httpx.Response(201, json={"id": "E2"}))
+    event = CalendarEventInput(
+        subject="Congés",
+        start="2026-08-17T00:00:00",
+        end="2026-08-28T23:59:59",
+        show_as="oof",
+    )
+    async with httpx.AsyncClient() as client:
+        created = await _service(settings, stub_auth, client).create_event(event)
+    assert created["id"] == "E2"
+    body = json.loads(route.calls.last.request.content)
+    assert body["showAs"] == "oof"
+
+
+@respx.mock
+async def test_update_event_show_as(settings: Settings, stub_auth: StubAuth) -> None:
+    """update_event passes showAs as a direct field (not nested)."""
+    route = respx.patch(f"{GRAPH}/me/events/E1").mock(return_value=httpx.Response(200, json={"id": "E1"}))
+    async with httpx.AsyncClient() as client:
+        await _service(settings, stub_auth, client).update_event("E1", {"showAs": "oof"})
+    assert route.called
+    assert json.loads(route.calls.last.request.content)["showAs"] == "oof"
+
+
+@respx.mock
 async def test_accept_event(settings: Settings, stub_auth: StubAuth) -> None:
     """accept_event POSTs to /me/events/{id}/accept with sendResponse=False."""
     route = respx.post(f"{GRAPH}/me/events/E1/accept").mock(return_value=httpx.Response(202))

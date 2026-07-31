@@ -364,6 +364,7 @@ def cal_add(
     location: Annotated[str | None, typer.Option("--location", help="Location")] = None,
     body: Annotated[str | None, typer.Option("--body", help="Event body")] = None,
     attendee: Annotated[list[str] | None, typer.Option("--attendee", help="Attendee (repeatable)")] = None,
+    show_as: Annotated[str | None, typer.Option("--show-as", help="Status: free|tentative|busy|oof|workingElsewhere|unknown")] = None,
 ) -> None:
     """Create a calendar event."""
     settings: Settings = ctx.obj
@@ -375,6 +376,7 @@ def cal_add(
         location=location,
         body=body,
         attendees=[Recipient.parse(a) for a in (attendee or [])],
+        show_as=show_as,
     )
 
     async def _do(_auth: Authenticator, _mail: MailService, cal: CalendarService) -> None:
@@ -392,6 +394,7 @@ def cal_update(
     start: Annotated[str | None, typer.Option("--start")] = None,
     end: Annotated[str | None, typer.Option("--end")] = None,
     tz: Annotated[str, typer.Option("--tz")] = "Europe/Paris",
+    show_as: Annotated[str | None, typer.Option("--show-as", help="Status: free|tentative|busy|oof|workingElsewhere|unknown")] = None,
 ) -> None:
     """Update fields on an existing event."""
     settings: Settings = ctx.obj
@@ -402,8 +405,10 @@ def cal_update(
         changes["start"] = {"dateTime": start, "timeZone": tz}
     if end is not None:
         changes["end"] = {"dateTime": end, "timeZone": tz}
+    if show_as is not None:
+        changes["showAs"] = show_as
     if not changes:
-        console.print("[red]nothing to update; pass --subject/--start/--end[/red]")
+        console.print("[red]nothing to update; pass --subject/--start/--end/--show-as[/red]")
         raise typer.Exit(code=2)
 
     async def _do(_auth: Authenticator, _mail: MailService, cal: CalendarService) -> None:

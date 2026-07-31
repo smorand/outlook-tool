@@ -145,6 +145,9 @@ class MailSummary(BaseModel):
         )
 
 
+SHOW_AS_VALUES = frozenset({"free", "tentative", "busy", "oof", "workingElsewhere", "unknown", "away"})
+
+
 class CalendarEventInput(BaseModel):
     """Input for creating or updating a calendar event."""
 
@@ -156,6 +159,15 @@ class CalendarEventInput(BaseModel):
     is_html: bool = True
     location: str | None = None
     attendees: list[Recipient] = Field(default_factory=list)
+    show_as: str | None = None  # free | tentative | busy | oof | workingElsewhere | unknown
+
+    @field_validator("show_as")
+    @classmethod
+    def _validate_show_as(cls, value: str | None) -> str | None:
+        if value is not None and value not in SHOW_AS_VALUES:
+            msg = f"show_as must be one of {sorted(SHOW_AS_VALUES)}, got {value!r}"
+            raise ValueError(msg)
+        return value
 
     @field_validator("start", "end")
     @classmethod
@@ -177,6 +189,8 @@ class CalendarEventInput(BaseModel):
             event["attendees"] = [
                 {"emailAddress": r.to_graph()["emailAddress"], "type": "required"} for r in self.attendees
             ]
+        if self.show_as is not None:
+            event["showAs"] = self.show_as
         return event
 
 
