@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from html.parser import HTMLParser
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlencode
 
@@ -16,7 +17,44 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _LIST_SELECT = "id,subject,from,receivedDateTime,bodyPreview,hasAttachments"
-_READ_SELECT = "id,subject,from,toRecipients,ccRecipients,receivedDateTime,body,hasAttachments"
+_READ_SELECT = (
+    "id,subject,from,toRecipients,ccRecipients,receivedDateTime,body,hasAttachments,startDateTime,endDateTime"
+)
+
+
+class _TextExtractor(HTMLParser):
+    """Minimal HTML-to-text converter using the stdlib parser."""
+
+    __slots__ = ("_parts",)
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self._parts: list[str] = []
+
+    def handle_data(self, data: str) -> None:
+        self._parts.append(data)
+
+    def get_text(self) -> str:
+        """Return concatenated text with blank lines collapsed."""
+        text = "\n".join(self._parts)
+        # Collapse runs of blank lines to a single blank line
+        lines = [line.rstrip() for line in text.splitlines()]
+        result: list[str] = []
+        prev_blank = False
+        for line in lines:
+            is_blank = not line
+            if is_blank and prev_blank:
+                continue
+            result.append(line)
+            prev_blank = is_blank
+        return "\n".join(result).strip()
+
+
+def _html_to_text(content: str) -> str:
+    """Strip HTML tags and return readable plain text."""
+    parser = _TextExtractor()
+    parser.feed(content)
+    return parser.get_text()
 
 
 class MailService:
@@ -118,11 +156,24 @@ class MailService:
         return await self.move_message(message_id, "archive")
 
     async def get_message(self, message_id: str) -> dict[str, Any]:
-        """Fetch a single message with its full body."""
+        """Fetch a single message with its full body.
+
+        For eventMessageRequest items, startDateTime and endDateTime are included
+        when returned by Graph (direct properties of the EventMessage resource).
+        """
         query = urlencode({"$select": _READ_SELECT}, safe=" ,")
         response = await self._graph.get(f"/me/messages/{message_id}?{query}")
         item: dict[str, Any] = response.json()
         return item
+
+    def body_as_text(self, item: dict[str, Any]) -> str:
+        """Return the message body as plain text, stripping HTML if needed."""
+        body = item.get("body") or {}
+        content = str(body.get("content", "")) if isinstance(body, dict) else ""
+        content_type = str(body.get("contentType", "")).lower() if isinstance(body, dict) else ""
+        if content_type == "html":
+            return _html_to_text(content)
+        return content
 
     async def mark_read(self, message_id: str, *, read: bool = True) -> None:
         """Mark a message as read or unread."""

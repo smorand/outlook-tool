@@ -67,3 +67,9 @@ class CalendarService:
         with trace_span("calendar.delete", attributes={"event.id": event_id}):
             await self._graph.delete(f"/me/events/{event_id}")
             logger.info("deleted event id=%s", event_id)
+
+    async def accept_event(self, event_id: str) -> None:
+        """Accept a meeting invitation (no response email sent)."""
+        with trace_span("calendar.accept", attributes={"event.id": event_id}):
+            await self._graph.post(f"/me/events/{event_id}/accept", json={"sendResponse": False})
+            logger.info("accepted event id=%s", event_id)

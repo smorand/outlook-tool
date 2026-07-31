@@ -460,3 +460,119 @@ def test_skill_learn_requires_rule(cli_env: Path) -> None:
     """skill learn without --rule exits with code 2."""
     result = runner.invoke(app, ["skill", "learn"])
     assert result.exit_code != 0
+
+
+# ---------------------------------------------------------------------------
+# cal accept
+# ---------------------------------------------------------------------------
+
+
+@respx.mock
+def test_cal_accept_command(cli_env: Path) -> None:
+    """cal accept POSTs to the accept endpoint and prints confirmation."""
+    route = respx.post(f"{GRAPH}/me/events/E99/accept").mock(return_value=httpx.Response(202))
+    result = runner.invoke(app, ["cal", "accept", "E99"])
+    assert result.exit_code == 0, result.stdout
+    assert route.called
+    body = json.loads(route.calls.last.request.content)
+    assert body == {"sendResponse": False}
+    assert "E99" in result.stdout
+
+
+# ---------------------------------------------------------------------------
+# mail read strips HTML
+# ---------------------------------------------------------------------------
+
+
+@respx.mock
+def test_mail_read_strips_html_tags(cli_env: Path) -> None:
+    """mail read displays plain text, not raw HTML tags."""
+    respx.get(url__regex=r".*/me/messages/HTML9.*").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "id": "HTML9",
+                "subject": "Invite",
+                "from": {"emailAddress": {"address": "x@y.com"}},
+                "receivedDateTime": "2026-08-01T09:00:00Z",
+                "body": {"contentType": "HTML", "content": "<p>Hello <b>world</b></p>"},
+            },
+        )
+    )
+    result = runner.invoke(app, ["mail", "read", "HTML9"])
+    assert result.exit_code == 0, result.stdout
+    assert "Hello" in result.stdout
+    assert "world" in result.stdout
+    assert "<b>" not in result.stdout
+    assert "<p>" not in result.stdout
+
+
+# ---------------------------------------------------------------------------
+# mail list --json includes is_meeting_request
+# ---------------------------------------------------------------------------
+
+
+@respx.mock
+def test_mail_list_json_includes_is_meeting_request(cli_env: Path) -> None:
+    """mail list --json includes is_meeting_request for each message."""
+    respx.get(url__regex=r".*/me/mailFolders/inbox/messages.*").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "value": [
+                    {
+                        "id": "INV2",
+                        "subject": "Meeting invite",
+                        "@odata.type": "#microsoft.graph.eventMessageRequest",
+                        "from": {"emailAddress": {"address": "host@corp.com"}},
+                        "receivedDateTime": "2026-08-01T09:00:00Z",
+                        "bodyPreview": "",
+                        "hasAttachments": False,
+                    },
+                    {
+                        "id": "REG2",
+                        "subject": "Normal mail",
+                        "from": {"emailAddress": {"address": "x@y.com"}},
+                        "receivedDateTime": "2026-08-01T10:00:00Z",
+                        "bodyPreview": "",
+                        "hasAttachments": False,
+                    },
+                ]
+            },
+        )
+    )
+    result = runner.invoke(app, ["mail", "list", "--json"])
+    assert result.exit_code == 0, result.stdout
+    parsed = json.loads(result.stdout)
+    by_id = {m["id"]: m for m in parsed}
+    assert by_id["INV2"]["is_meeting_request"] is True
+    assert by_id["REG2"]["is_meeting_request"] is False
+
+
+# ---------------------------------------------------------------------------
+# mail get --json exposes startDateTime/endDateTime for eventMessageRequest
+# ---------------------------------------------------------------------------
+
+
+@respx.mock
+def test_mail_get_json_exposes_meeting_datetimes(cli_env: Path) -> None:
+    """mail get --json includes startDateTime and endDateTime for meeting invites."""
+    respx.get(url__regex=r".*/me/messages/MEET9.*").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "id": "MEET9",
+                "@odata.type": "#microsoft.graph.eventMessageRequest",
+                "subject": "Sync",
+                "startDateTime": {"dateTime": "2026-08-04T09:00:00.0000000", "timeZone": "Europe/Paris"},
+                "endDateTime": {"dateTime": "2026-08-04T10:00:00.0000000", "timeZone": "Europe/Paris"},
+                "body": {"contentType": "Text", "content": "join us"},
+            },
+        )
+    )
+    result = runner.invoke(app, ["mail", "get", "MEET9", "--json"])
+    assert result.exit_code == 0, result.stdout
+    parsed = json.loads(result.stdout)
+    assert parsed["@odata.type"] == "#microsoft.graph.eventMessageRequest"
+    assert parsed["startDateTime"]["dateTime"] == "2026-08-04T09:00:00.0000000"
+    assert parsed["endDateTime"]["dateTime"] == "2026-08-04T10:00:00.0000000"

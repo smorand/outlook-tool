@@ -216,3 +216,107 @@ async def test_list_messages_unread_filter(settings: Settings, stub_auth: StubAu
         await service.list_messages(top=5, unread_only=True)
     url_str = str(route.calls.last.request.url)
     assert "isRead" in url_str or "%24filter" in url_str
+
+
+@respx.mock
+async def test_body_as_text_strips_html(settings: Settings, stub_auth: StubAuth) -> None:
+    """body_as_text converts HTML body to plain text without tags."""
+    respx.get(url__regex=r".*/me/messages/HTML1.*").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "id": "HTML1",
+                "body": {
+                    "contentType": "HTML",
+                    "content": "<html><body><p>Hello <b>world</b></p><p>Second line</p></body></html>",
+                },
+            },
+        )
+    )
+    async with httpx.AsyncClient() as client:
+        service = MailService(settings, GraphClient(settings, stub_auth, client))
+        item = await service.get_message("HTML1")
+    text = service.body_as_text(item)
+    assert "<" not in text
+    assert "Hello" in text
+    assert "world" in text
+    assert "Second line" in text
+
+
+@respx.mock
+async def test_body_as_text_passes_through_plain_text(settings: Settings, stub_auth: StubAuth) -> None:
+    """body_as_text returns plain text bodies unchanged."""
+    respx.get(url__regex=r".*/me/messages/TXT1.*").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "id": "TXT1",
+                "body": {"contentType": "Text", "content": "plain text content"},
+            },
+        )
+    )
+    async with httpx.AsyncClient() as client:
+        service = MailService(settings, GraphClient(settings, stub_auth, client))
+        item = await service.get_message("TXT1")
+    assert service.body_as_text(item) == "plain text content"
+
+
+@respx.mock
+async def test_get_message_select_includes_meeting_fields(settings: Settings, stub_auth: StubAuth) -> None:
+    """get_message $select includes startDateTime and endDateTime."""
+    route = respx.get(url__regex=r".*/me/messages/MEET1.*").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "id": "MEET1",
+                "@odata.type": "#microsoft.graph.eventMessageRequest",
+                "startDateTime": {"dateTime": "2026-08-04T09:00:00.0000000", "timeZone": "Europe/Paris"},
+                "endDateTime": {"dateTime": "2026-08-04T10:00:00.0000000", "timeZone": "Europe/Paris"},
+                "body": {"contentType": "Text", "content": "join us"},
+            },
+        )
+    )
+    async with httpx.AsyncClient() as client:
+        service = MailService(settings, GraphClient(settings, stub_auth, client))
+        item = await service.get_message("MEET1")
+    url_str = str(route.calls.last.request.url)
+    assert "startDateTime" in url_str
+    assert "endDateTime" in url_str
+    assert item["@odata.type"] == "#microsoft.graph.eventMessageRequest"
+    assert isinstance(item["startDateTime"], dict)
+
+
+@respx.mock
+async def test_list_messages_is_meeting_request_field(settings: Settings, stub_auth: StubAuth) -> None:
+    """list_messages correctly maps @odata.type to is_meeting_request."""
+    respx.get(url__regex=r".*/me/mailFolders/inbox/messages.*").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "value": [
+                    {
+                        "id": "INV1",
+                        "subject": "Invite",
+                        "@odata.type": "#microsoft.graph.eventMessageRequest",
+                        "from": {"emailAddress": {"address": "host@corp.com"}},
+                        "receivedDateTime": "2026-08-01T09:00:00Z",
+                        "bodyPreview": "",
+                        "hasAttachments": False,
+                    },
+                    {
+                        "id": "REG1",
+                        "subject": "Regular",
+                        "from": {"emailAddress": {"address": "x@y.com"}},
+                        "receivedDateTime": "2026-08-01T10:00:00Z",
+                        "bodyPreview": "",
+                        "hasAttachments": False,
+                    },
+                ]
+            },
+        )
+    )
+    async with httpx.AsyncClient() as client:
+        service = MailService(settings, GraphClient(settings, stub_auth, client))
+        messages = await service.list_messages(top=5)
+    assert messages[0].is_meeting_request is True
+    assert messages[1].is_meeting_request is False

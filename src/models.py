@@ -122,6 +122,7 @@ class MailSummary(BaseModel):
     received: str
     preview: str
     has_attachments: bool
+    is_meeting_request: bool = False
 
     @classmethod
     def from_graph(cls, item: dict[str, object]) -> MailSummary:
@@ -132,6 +133,7 @@ class MailSummary(BaseModel):
             email_addr = sender_obj.get("emailAddress")
             if isinstance(email_addr, dict):
                 address = str(email_addr.get("address", ""))
+        odata_type = str(item.get("@odata.type") or "")
         return cls(
             id=str(item.get("id", "")),
             subject=str(item.get("subject") or "(no subject)"),
@@ -139,6 +141,7 @@ class MailSummary(BaseModel):
             received=str(item.get("receivedDateTime", "")),
             preview=str(item.get("bodyPreview") or "").strip(),
             has_attachments=bool(item.get("hasAttachments", False)),
+            is_meeting_request=odata_type == "#microsoft.graph.eventMessageRequest",
         )
 
 

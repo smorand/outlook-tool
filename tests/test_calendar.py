@@ -86,3 +86,14 @@ async def test_delete_event(settings: Settings, stub_auth: StubAuth) -> None:
     async with httpx.AsyncClient() as client:
         await _service(settings, stub_auth, client).delete_event("E1")
     assert route.called
+
+
+@respx.mock
+async def test_accept_event(settings: Settings, stub_auth: StubAuth) -> None:
+    """accept_event POSTs to /me/events/{id}/accept with sendResponse=False."""
+    route = respx.post(f"{GRAPH}/me/events/E1/accept").mock(return_value=httpx.Response(202))
+    async with httpx.AsyncClient() as client:
+        await _service(settings, stub_auth, client).accept_event("E1")
+    assert route.called
+    body = json.loads(route.calls.last.request.content)
+    assert body == {"sendResponse": False}

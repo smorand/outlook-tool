@@ -116,3 +116,34 @@ def test_calendar_event_summary_from_graph() -> None:
     assert summary.organizer == "me@corp.com"
     assert summary.location == "Home"
     assert summary.start.startswith("2026-07-29T03:00:00")
+
+
+def test_mail_summary_is_meeting_request_true() -> None:
+    """MailSummary.is_meeting_request is True for eventMessageRequest."""
+    summary = MailSummary.from_graph(
+        {
+            "id": "M1",
+            "subject": "Invite",
+            "@odata.type": "#microsoft.graph.eventMessageRequest",
+            "from": {"emailAddress": {"address": "boss@corp.com"}},
+            "receivedDateTime": "2026-08-01T09:00:00Z",
+            "bodyPreview": "You are invited",
+            "hasAttachments": False,
+        }
+    )
+    assert summary.is_meeting_request is True
+
+
+def test_mail_summary_is_meeting_request_false_for_regular_mail() -> None:
+    """MailSummary.is_meeting_request is False when @odata.type is absent or a plain message."""
+    summary = MailSummary.from_graph(
+        {
+            "id": "M2",
+            "subject": "Hello",
+            "from": {"emailAddress": {"address": "a@b.com"}},
+            "receivedDateTime": "2026-08-01T10:00:00Z",
+            "bodyPreview": "hi",
+            "hasAttachments": False,
+        }
+    )
+    assert summary.is_meeting_request is False

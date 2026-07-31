@@ -204,14 +204,15 @@ def mail_get(
     async def _do(_auth: Authenticator, mail: MailService, _cal: CalendarService) -> None:
         item = await mail.get_message(message_id)
         if as_json:
+            # startDateTime/endDateTime are included by Graph for eventMessageRequest items;
+            # they are already in item when present, so the dict is passed through as-is.
             typer.echo(json.dumps(item, ensure_ascii=False))
             return
         console.print(f"[bold]Subject:[/bold] {item.get('subject', '')}")
         sender = (item.get("from") or {}).get("emailAddress", {}).get("address", "")
         console.print(f"[bold]From:[/bold] {sender}")
         console.print(f"[bold]Received:[/bold] {item.get('receivedDateTime', '')}")
-        body = item.get("body") or {}
-        console.print("\n" + str(body.get("content", "")))
+        console.print("\n" + mail.body_as_text(item))
 
     _run(settings, _do)
 
@@ -310,7 +311,7 @@ def mail_move(
 
 @mail_app.command("read")
 def mail_read(ctx: typer.Context, message_id: Annotated[str, typer.Argument(help="Message id")]) -> None:
-    """Show a message with its body (alias for mail get)."""
+    """Show a message with its body as plain text (alias for mail get)."""
     settings: Settings = ctx.obj
 
     async def _do(_auth: Authenticator, mail: MailService, _cal: CalendarService) -> None:
@@ -319,8 +320,7 @@ def mail_read(ctx: typer.Context, message_id: Annotated[str, typer.Argument(help
         sender = (item.get("from") or {}).get("emailAddress", {}).get("address", "")
         console.print(f"[bold]From:[/bold] {sender}")
         console.print(f"[bold]Received:[/bold] {item.get('receivedDateTime', '')}")
-        body = item.get("body") or {}
-        console.print("\n" + str(body.get("content", "")))
+        console.print("\n" + mail.body_as_text(item))
 
     _run(settings, _do)
 
@@ -421,6 +421,18 @@ def cal_delete(ctx: typer.Context, event_id: Annotated[str, typer.Argument(help=
     async def _do(_auth: Authenticator, _mail: MailService, cal: CalendarService) -> None:
         await cal.delete_event(event_id)
         console.print(f"[green]Deleted[/green] id={event_id}")
+
+    _run(settings, _do)
+
+
+@cal_app.command("accept")
+def cal_accept(ctx: typer.Context, event_id: Annotated[str, typer.Argument(help="Event id")]) -> None:
+    """Accept a meeting invitation (no response email sent)."""
+    settings: Settings = ctx.obj
+
+    async def _do(_auth: Authenticator, _mail: MailService, cal: CalendarService) -> None:
+        await cal.accept_event(event_id)
+        console.print(f"[green]Accepted[/green] event id={event_id}")
 
     _run(settings, _do)
 
