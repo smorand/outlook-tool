@@ -42,7 +42,7 @@ outlook-tool
 │   ├── list [--top N] [--folder F] [--unread] [--json]
 │   ├── get <id> [--json]             # Lire un message complet
 │   ├── search <query> [--top N] [--json]
-│   ├── read <id>                     # Afficher un message (corps complet)
+│   ├── read <id>                     # Afficher un message en texte plain (HTML strippé)
 │   ├── mark-read <id>                # Marquer comme lu
 │   ├── mark-unread <id>              # Marquer comme non lu
 │   ├── archive <id>                  # Archiver (déplacer vers Archive)
@@ -53,10 +53,22 @@ outlook-tool
     ├── list --start ISO --end ISO [--tz TZ] [--json]
     ├── add --subject ... --start ISO --end ISO [--tz TZ] [--location ...] [--body ...] [--attendee ...]
     ├── update <id> [--subject ...] [--start ISO] [--end ISO] [--tz TZ]
-    └── delete <id>
+    ├── delete <id>
+    └── accept <id>                   # Accepter une invitation de réunion (sans envoyer de réponse)
 ```
 
 Toute commande accepte `--help` pour voir les options détaillées.
+
+## Champs spéciaux dans les réponses JSON
+
+### `mail list --json`
+Chaque objet inclut `is_meeting_request: bool` — `true` quand le mail est une invitation de réunion (`eventMessageRequest`). Permet de détecter les invitations sans faire un `mail get` sur chaque mail.
+
+### `mail get <id> --json`
+Pour les invitations de réunion (`is_meeting_request: true`), le JSON inclut `startDateTime` et `endDateTime` (ISO 8601) donnant le créneau de l'événement. Évite de croiser avec `cal list` pour trouver les dates.
+
+### `mail read <id>`
+Retourne le corps en **texte plain** : si le contenu est HTML, les balises sont strippées automatiquement (stdlib `html.parser`). Plus besoin de post-traitement Python côté agent.
 
 ## Workflow type : résumé des non-lus
 
@@ -107,6 +119,31 @@ outlook-tool cal update <id> --subject "Point équipe (reporté)"
 # Supprimer
 outlook-tool cal delete <id>
 ```
+
+## Workflow type : invitations de réunion
+
+```bash
+# 1. Détecter les invitations dans les non-lus
+outlook-tool mail list --unread --top 50 --json
+# -> filtrer sur is_meeting_request: true
+
+# 2. Récupérer le créneau sans passer par cal list
+outlook-tool mail get <id> --json
+# -> startDateTime et endDateTime présents si is_meeting_request
+
+# 3. Vérifier la dispo dans le calendrier
+outlook-tool cal list --start <startDateTime> --end <endDateTime> --json
+
+# 4a. Disponible : accepter + marquer lu + archiver
+outlook-tool cal accept <event_id_from_cal_list>
+outlook-tool mail mark-read <mail_id>
+outlook-tool mail archive <mail_id>
+
+# 4b. Conflit : signaler à l'utilisateur, ne pas toucher au mail
+```
+
+**Note :** `cal accept <id>` prend l'**event id** (calendrier), pas le mail id.
+Récupérer l'event id via `cal list` sur le créneau de l'invitation.
 
 ## Dossiers bien connus (--folder et move)
 
