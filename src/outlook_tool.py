@@ -1,4 +1,4 @@
-"""CLI entry point for outlook-mail: send/read mail and manage calendar via Graph."""
+"""CLI entry point for outlook-tool: send/read mail and manage calendar via Graph."""
 
 from __future__ import annotations
 

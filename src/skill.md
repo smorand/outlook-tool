@@ -1,7 +1,7 @@
 # Outlook Mail (pro IBM) — Mode d'emploi pour agent
 
-Ce document est imprimé par `outlook-mail skill`. Il décrit le workflow complet
-de gestion des emails Outlook professionnels via le binaire `outlook-mail`, à
+Ce document est imprimé par `outlook-tool skill`. Il décrit le workflow complet
+de gestion des emails Outlook professionnels via le binaire `outlook-tool`, à
 destination d'un agent (Claude, Cursor, etc.) qui doit assister l'utilisateur.
 
 ## Quand utiliser
@@ -21,20 +21,20 @@ Pour les emails **personnels** (Gmail), utiliser `email-manager` à la place.
 ## Authentification
 
 - Flow OAuth2 device-code (client public Microsoft Office, aucun secret).
-- Token mis en cache : `~/.cache/outlook-mail/token.json`
+- Token mis en cache : `~/.cache/outlook-tool/token.json`
 - **Reconnexion automatique** : le binaire rafraîchit silencieusement le token
   expiré. Si le refresh token est invalide, la commande échoue avec exit code 2
   et un message clair. L'agent doit alors demander à l'utilisateur de lancer
-  `outlook-mail login` manuellement.
+  `outlook-tool login` manuellement.
 
 ```bash
-outlook-mail login   # ou re-login si token révoqué
+outlook-tool login   # ou re-login si token révoqué
 ```
 
 ## Commandes disponibles
 
 ```
-outlook-mail
+outlook-tool
 ├── login                             # Authentification device-code interactive
 ├── version                           # Version du binaire
 ├── send                              # Envoyer un email
@@ -62,32 +62,32 @@ Toute commande accepte `--help` pour voir les options détaillées.
 
 ```bash
 # 1. Lister les non-lus (inbox par défaut)
-outlook-mail mail list --unread --top 50 --json
+outlook-tool mail list --unread --top 50 --json
 
 # 2. Pour un message à lire en détail
-outlook-mail mail get <id> --json
+outlook-tool mail get <id> --json
 
 # 3. Marquer comme lu après traitement
-outlook-mail mail mark-read <id>
+outlook-tool mail mark-read <id>
 
 # 4. Archiver si traité
-outlook-mail mail archive <id>
+outlook-tool mail archive <id>
 
 # 5. Flaguer si nécessite un suivi
-outlook-mail mail flag <id>
+outlook-tool mail flag <id>
 ```
 
 ## Workflow type : envoi
 
 ```bash
 # Corps texte
-outlook-mail send --to "alice@corp.com" --subject "CR réunion" --body "Bonjour..."
+outlook-tool send --to "alice@corp.com" --subject "CR réunion" --body "Bonjour..."
 
 # Corps HTML
-outlook-mail send --to "bob@corp.com" --subject "Rapport" --body "<h1>...</h1>" --html
+outlook-tool send --to "bob@corp.com" --subject "Rapport" --body "<h1>...</h1>" --html
 
 # Avec pièce jointe
-outlook-mail send --to "alice@corp.com" --subject "Rapport" --body "Voir PJ" \
+outlook-tool send --to "alice@corp.com" --subject "Rapport" --body "Voir PJ" \
   --attach rapport.pdf
 ```
 
@@ -95,17 +95,17 @@ outlook-mail send --to "alice@corp.com" --subject "Rapport" --body "Voir PJ" \
 
 ```bash
 # Voir les événements de la semaine
-outlook-mail cal list --start 2026-07-28T00:00:00 --end 2026-08-04T00:00:00 --json
+outlook-tool cal list --start 2026-07-28T00:00:00 --end 2026-08-04T00:00:00 --json
 
 # Créer un événement
-outlook-mail cal add --subject "Point équipe" --start 2026-08-04T10:00:00 \
+outlook-tool cal add --subject "Point équipe" --start 2026-08-04T10:00:00 \
   --end 2026-08-04T11:00:00 --attendee "alice@corp.com"
 
 # Modifier
-outlook-mail cal update <id> --subject "Point équipe (reporté)"
+outlook-tool cal update <id> --subject "Point équipe (reporté)"
 
 # Supprimer
-outlook-mail cal delete <id>
+outlook-tool cal delete <id>
 ```
 
 ## Dossiers bien connus (--folder et move)
@@ -144,7 +144,7 @@ Quand l'utilisateur dit "ces mails tu peux toujours les traiter comme ça" ou
 autre connaissance permanente, persister la règle :
 
 ```bash
-outlook-mail skill learn --rule "Tous les emails de iec@us.ibm.com -> mark-read + archive (newsletters IBM internes)"
+outlook-tool skill learn --rule "Tous les emails de iec@us.ibm.com -> mark-read + archive (newsletters IBM internes)"
 ```
 
 Avant d'exécuter `skill learn`, **toujours demander confirmation utilisateur**
@@ -152,14 +152,14 @@ avec la formulation exacte de la règle.
 
 ### Fichiers de connaissance utilisateur
 
-Stockés dans `~/.config/outlook-mail/` et automatiquement concaténés à la
-sortie de `outlook-mail skill` :
+Stockés dans `~/.config/outlook-tool/` et automatiquement concaténés à la
+sortie de `outlook-tool skill` :
 
 - `regles-tri.md` — règles de traitement par expéditeur / type
 - `patterns-emails.md` — patterns pour identifier les types d'emails
 - `filtres-evolutifs.md` — historique des filtres appris
 
-Ces fichiers sont concaténés automatiquement à chaque appel à `outlook-mail skill`.
+Ces fichiers sont concaténés automatiquement à chaque appel à `outlook-tool skill`.
 
 ## Confirmation utilisateur OBLIGATOIRE avant action
 

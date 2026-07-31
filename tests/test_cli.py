@@ -11,9 +11,9 @@ import pytest
 import respx
 from typer.testing import CliRunner
 
-import outlook_mail
+import outlook_tool
 from auth import TokenSet
-from outlook_mail import app
+from outlook_tool import app
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -31,7 +31,7 @@ def cli_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.chdir(tmp_path)
     cache = tmp_path / "token.json"
     cache.write_text(TokenSet(access_token="tok", expires_at=time.time() + 3600).model_dump_json())
-    monkeypatch.setenv("OUTLOOK_MAIL_TOKEN_CACHE_PATH", str(cache))
+    monkeypatch.setenv("OUTLOOK_TOOL_TOKEN_CACHE_PATH", str(cache))
     return cache
 
 
@@ -63,7 +63,7 @@ def test_send_requires_body(cli_env: Path) -> None:
 def test_login_required_without_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A command with no cached token exits with the login-required code."""
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("OUTLOOK_MAIL_TOKEN_CACHE_PATH", str(tmp_path / "absent.json"))
+    monkeypatch.setenv("OUTLOOK_TOOL_TOKEN_CACHE_PATH", str(tmp_path / "absent.json"))
     result = runner.invoke(app, ["mail", "list"])
     assert result.exit_code == 2
 
@@ -274,8 +274,8 @@ def test_login_command(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """login runs the device-code flow and caches a token (browser open patched)."""
     monkeypatch.chdir(tmp_path)
     cache = tmp_path / "token.json"
-    monkeypatch.setenv("OUTLOOK_MAIL_TOKEN_CACHE_PATH", str(cache))
-    monkeypatch.setattr(outlook_mail.webbrowser, "open", lambda _url: True)
+    monkeypatch.setenv("OUTLOOK_TOOL_TOKEN_CACHE_PATH", str(cache))
+    monkeypatch.setattr(outlook_tool.webbrowser, "open", lambda _url: True)
     respx.post(DEVICECODE_URL).mock(
         return_value=httpx.Response(
             200,
@@ -415,20 +415,20 @@ def test_mail_list_unread_flag(cli_env: Path) -> None:
 
 
 def test_skill_prints_embedded(cli_env: Path) -> None:
-    """outlook-mail skill prints the embedded skill.md."""
+    """outlook-tool skill prints the embedded skill.md."""
     result = runner.invoke(app, ["skill"])
     assert result.exit_code == 0, result.stdout
-    assert "outlook-mail" in result.stdout.lower()
+    assert "outlook-tool" in result.stdout.lower()
 
 
 def test_skill_includes_user_knowledge(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """skill concatenates .md files from XDG_CONFIG_HOME/outlook-mail."""
+    """skill concatenates .md files from XDG_CONFIG_HOME/outlook-tool."""
     monkeypatch.chdir(tmp_path)
     cache = tmp_path / "token.json"
     cache.write_text(TokenSet(access_token="tok", expires_at=time.time() + 3600).model_dump_json())
-    monkeypatch.setenv("OUTLOOK_MAIL_TOKEN_CACHE_PATH", str(cache))
+    monkeypatch.setenv("OUTLOOK_TOOL_TOKEN_CACHE_PATH", str(cache))
 
-    config_dir = tmp_path / "config" / "outlook-mail"
+    config_dir = tmp_path / "config" / "outlook-tool"
     config_dir.mkdir(parents=True)
     (config_dir / "regles-tri.md").write_text("- règle test\n")
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
@@ -443,9 +443,9 @@ def test_skill_learn_appends_rule(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     monkeypatch.chdir(tmp_path)
     cache = tmp_path / "token.json"
     cache.write_text(TokenSet(access_token="tok", expires_at=time.time() + 3600).model_dump_json())
-    monkeypatch.setenv("OUTLOOK_MAIL_TOKEN_CACHE_PATH", str(cache))
+    monkeypatch.setenv("OUTLOOK_TOOL_TOKEN_CACHE_PATH", str(cache))
 
-    config_dir = tmp_path / "config" / "outlook-mail"
+    config_dir = tmp_path / "config" / "outlook-tool"
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
 
     result = runner.invoke(app, ["skill", "learn", "--rule", "always archive iec@us.ibm.com"])

@@ -24,22 +24,22 @@ DEFAULT_SCOPES = (
 
 
 def _default_token_cache_path() -> Path:
-    return Path.home() / ".cache" / "outlook-mail" / "token.json"
+    return Path.home() / ".cache" / "outlook-tool" / "token.json"
 
 
 class Settings(BaseSettings):
-    """Configuration loaded from environment variables (prefix OUTLOOK_MAIL_).
+    """Configuration loaded from environment variables (prefix OUTLOOK_TOOL_).
 
     A .env file is loaded automatically if present.
     """
 
     model_config = SettingsConfigDict(
-        env_prefix="OUTLOOK_MAIL_",
+        env_prefix="OUTLOOK_TOOL_",
         env_file=".env",
         env_file_encoding="utf-8",
     )
 
-    app_name: str = "outlook-mail"
+    app_name: str = "outlook-tool"
 
     # OAuth2 device-code flow (public client, no secret).
     client_id: str = DEFAULT_OFFICE_CLIENT_ID

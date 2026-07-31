@@ -1,4 +1,4 @@
-# outlook-mail
+# outlook-tool
 
 Envoyer/lire des emails Outlook et gérer le calendrier depuis un compte Microsoft 365
 **pro**, sans posséder d'app registration ni de client secret.
@@ -15,53 +15,53 @@ enregistrer. Un login navigateur unique donne un token délégué + refresh toke
 pré-consenti pour un large lot de scopes Graph (`Mail.ReadWrite`, `Mail.Send`,
 `Calendars.ReadWrite`, ...). Les appels passent ensuite par **Microsoft Graph**.
 
-Le refresh token est mis en cache (`~/.cache/outlook-mail/token.json`, permissions
+Le refresh token est mis en cache (`~/.cache/outlook-tool/token.json`, permissions
 `0600`) donc les exécutions suivantes sont non interactives jusqu'à révocation.
 
 ## Installation
 
 ```bash
 make sync                 # installe les dépendances (uv)
-make install              # installe l'outil 'outlook-mail' en global (uv tool)
+make install              # installe l'outil 'outlook-tool' en global (uv tool)
 ```
 
 ## Utilisation
 
 ```bash
 # 1. Login unique (ouvre le navigateur, MFA inclus)
-outlook-mail login
+outlook-tool login
 
 # 2. Envoi HTML avec pièces jointes (destinataire répétable)
-outlook-mail send \
+outlook-tool send \
   --to "Seb <seb.morand@gmail.com>" \
   --subject "Rapport" \
   --body "<h1>Salut</h1><p>Voici le doc.</p>" \
   --attach ./rapport.pdf --attach ./photo.jpg
 
 # corps depuis un fichier, texte brut
-outlook-mail send --to a@b.com -s "Note" --body-file note.txt --text
+outlook-tool send --to a@b.com -s "Note" --body-file note.txt --text
 
 # 3. Lecture / recherche / rangement
-outlook-mail mail list --top 10
-outlook-mail mail list --json          # sortie JSON avec ids complets (scripting)
-outlook-mail mail read <message-id>
-outlook-mail mail search "from:alice subject:report" --top 10
-outlook-mail mail archive <message-id>                 # -> dossier Archive
-outlook-mail mail move <message-id> deleteditems       # dossier (nom connu ou id)
+outlook-tool mail list --top 10
+outlook-tool mail list --json          # sortie JSON avec ids complets (scripting)
+outlook-tool mail read <message-id>
+outlook-tool mail search "from:alice subject:report" --top 10
+outlook-tool mail archive <message-id>                 # -> dossier Archive
+outlook-tool mail move <message-id> deleteditems       # dossier (nom connu ou id)
 
 # 4. Calendrier
-outlook-mail cal add --subject "Nuit" \
+outlook-tool cal add --subject "Nuit" \
   --start 2026-07-29T03:00:00 --end 2026-07-29T03:30:00 \
   --attendee seb.morand@gmail.com
-outlook-mail cal list --start 2026-07-29T00:00:00 --end 2026-07-30T00:00:00
-outlook-mail cal list --start ... --end ... --json   # ids complets pour update/delete
-outlook-mail cal update <event-id> --subject "Nuit v2"
-outlook-mail cal delete <event-id>
+outlook-tool cal list --start 2026-07-29T00:00:00 --end 2026-07-30T00:00:00
+outlook-tool cal list --start ... --end ... --json   # ids complets pour update/delete
+outlook-tool cal update <event-id> --subject "Nuit v2"
+outlook-tool cal delete <event-id>
 ```
 
 Verbosité (silencieux par défaut): sans flag = erreurs seulement, `-v` = info, `-vv` = debug.
-Les logs (app + OpenTelemetry) sont toujours écrits dans `~/.cache/outlook-mail/`
-(`outlook-mail.log`, `outlook-mail-otel.log`), quel que soit le niveau console.
+Les logs (app + OpenTelemetry) sont toujours écrits dans `~/.cache/outlook-tool/`
+(`outlook-tool.log`, `outlook-tool-otel.log`), quel que soit le niveau console.
 
 Les tableaux tronquent les ids pour
 la lisibilité ; utilise `--json` sur `mail list` / `cal list` pour récupérer les ids complets
@@ -73,15 +73,15 @@ En dessous de ~3 Mo (configurable), l'envoi se fait en un seul appel `sendMail`.
 Au-delà, l'outil crée un brouillon, uploade chaque pièce jointe via une **upload
 session** (PUT par chunks de 320 Ko multiples), puis envoie le brouillon.
 
-## Configuration (env `OUTLOOK_MAIL_*`)
+## Configuration (env `OUTLOOK_TOOL_*`)
 
 | Variable | Défaut | Rôle |
 |---|---|---|
-| `OUTLOOK_MAIL_CLIENT_ID` | client Office public | client ID OAuth2 emprunté |
-| `OUTLOOK_MAIL_SCOPES` | Mail + Calendars | scopes délégués demandés |
-| `OUTLOOK_MAIL_TOKEN_CACHE_PATH` | `~/.cache/outlook-mail/token.json` | cache token (0600) |
-| `OUTLOOK_MAIL_ATTACHMENT_INLINE_LIMIT` | `3000000` | seuil inline vs upload session |
-| `OUTLOOK_MAIL_GRAPH_BASE` | `https://graph.microsoft.com/v1.0` | base Graph |
+| `OUTLOOK_TOOL_CLIENT_ID` | client Office public | client ID OAuth2 emprunté |
+| `OUTLOOK_TOOL_SCOPES` | Mail + Calendars | scopes délégués demandés |
+| `OUTLOOK_TOOL_TOKEN_CACHE_PATH` | `~/.cache/outlook-tool/token.json` | cache token (0600) |
+| `OUTLOOK_TOOL_ATTACHMENT_INLINE_LIMIT` | `3000000` | seuil inline vs upload session |
+| `OUTLOOK_TOOL_GRAPH_BASE` | `https://graph.microsoft.com/v1.0` | base Graph |
 
 ## Développement
 
@@ -105,6 +105,6 @@ l'outil cesserait alors de fonctionner sans changement de code.
 Détection, codes d'erreur AADSTS et fallbacks (autre client ID, ta propre app publique,
 plan B navigateur) sont détaillés dans **`.agent_docs/auth-client-id.md`**. La solution
 stable qui supprime ce risque: enregistrer ta propre app publique (sans secret) et poser
-`OUTLOOK_MAIL_CLIENT_ID=<ton-app-id>`.
+`OUTLOOK_TOOL_CLIENT_ID=<ton-app-id>`.
 
 Autres: non affilié à Microsoft, usage personnel.

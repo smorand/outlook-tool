@@ -1,8 +1,8 @@
-"""skill / skill learn commands for outlook-mail.
+"""skill / skill learn commands for outlook-tool.
 
 Mirrors the pattern from email-manager:
-  - `outlook-mail skill`        → print embedded skill.md + concat user knowledge files
-  - `outlook-mail skill learn`  → append a rule to ~/.config/outlook-mail/regles-tri.md
+  - `outlook-tool skill`        → print embedded skill.md + concat user knowledge files
+  - `outlook-tool skill learn`  → append a rule to ~/.config/outlook-tool/regles-tri.md
 """
 
 from __future__ import annotations
@@ -15,14 +15,14 @@ from typing import Annotated
 
 import typer
 
-_SKILL_CONFIG_DIR = "outlook-mail"
+_SKILL_CONFIG_DIR = "outlook-tool"
 _SKILL_RULES_FILE = "regles-tri.md"
 _DIR_PERM = 0o755
 _FILE_PERM = 0o644
 
 
 def _skill_config_dir() -> Path:
-    """Return ~/.config/outlook-mail (or $XDG_CONFIG_HOME/outlook-mail).
+    """Return ~/.config/outlook-tool (or $XDG_CONFIG_HOME/outlook-tool).
 
     Deliberately avoids os.path.expanduser("~/Library/Application Support") on
     macOS — same rationale as email-manager.

@@ -2,7 +2,7 @@
 
 ## Le risque
 
-`outlook-mail` n'enregistre pas sa propre app Azure AD. Il **emprunte** un client ID
+`outlook-tool` n'enregistre pas sa propre app Azure AD. Il **emprunte** un client ID
 Microsoft first-party public, par défaut celui de Microsoft Office
 (`d3590ed6-52b3-4102-aeff-aad2292ab01c`), et obtient un token délégué via device code flow.
 
@@ -21,7 +21,7 @@ du jour au lendemain, sans changement de code de notre part.
 
 ## Comment détecter le blocage
 
-Au `outlook-mail login`, le blocage apparaît **côté navigateur** (message d'erreur
+Au `outlook-tool login`, le blocage apparaît **côté navigateur** (message d'erreur
 "Need admin approval" / "AADSTS65004" / "AADSTS7000112" ou équivalent), pas forcément dans
 le terminal: quand l'admin refuse, l'endpoint device code reste souvent en
 `authorization_pending` jusqu'à expiration. La source de vérité est le navigateur.
@@ -41,15 +41,15 @@ Codes typiques:
 
    ```bash
    # Azure CLI (souvent bloqué sur tenants stricts, mais à tester)
-   OUTLOOK_MAIL_CLIENT_ID=04b07795-8ddb-461a-bbee-02f9e1bf7b46 outlook-mail login
+   OUTLOOK_TOOL_CLIENT_ID=04b07795-8ddb-461a-bbee-02f9e1bf7b46 outlook-tool login
    # Thunderbird (scopes SMTP/IMAP/POP surtout, pas idéal pour Graph)
-   OUTLOOK_MAIL_CLIENT_ID=9e5f94bc-e8a4-4e73-b8be-63364c29d753 outlook-mail login
+   OUTLOOK_TOOL_CLIENT_ID=9e5f94bc-e8a4-4e73-b8be-63364c29d753 outlook-tool login
    ```
 
 2. **Enregistrer ta propre app publique** (si tu obtiens le droit, même sans secret):
    App Registration → type "public client / mobile & desktop", activer "Allow public
    client flows", scopes délégués `Mail.ReadWrite`, `Mail.Send`, `Calendars.ReadWrite`.
-   Puis `OUTLOOK_MAIL_CLIENT_ID=<ton-app-id>`. C'est la solution stable et propre: elle
+   Puis `OUTLOOK_TOOL_CLIENT_ID=<ton-app-id>`. C'est la solution stable et propre: elle
    supprime entièrement ce risque.
 
 3. **Plan B navigateur (non implémenté).** Si tout token OAuth est refusé mais qu'OWA
@@ -60,4 +60,4 @@ Codes typiques:
 ## Où c'est configuré
 
 `src/config.py`: `DEFAULT_OFFICE_CLIENT_ID`, `DEFAULT_SCOPES`. Surchargeable par
-`OUTLOOK_MAIL_CLIENT_ID` et `OUTLOOK_MAIL_SCOPES` (voir README).
+`OUTLOOK_TOOL_CLIENT_ID` et `OUTLOOK_TOOL_SCOPES` (voir README).

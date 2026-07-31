@@ -1,6 +1,6 @@
 # Vérification e2e (réelle)
 
-Ces tests touchent le vrai tenant et exigent un `outlook-mail login` interactif préalable
+Ces tests touchent le vrai tenant et exigent un `outlook-tool login` interactif préalable
 (le device code flow ouvre le navigateur). Les tests automatisés (`make test`) mockent
 Graph et ne remplacent pas ces vérifications.
 
@@ -15,10 +15,10 @@ Graph et ne remplacent pas ces vérifications.
 ## Mail
 
 ```bash
-outlook-mail login            # une fois
-outlook-mail send \
+outlook-tool login            # une fois
+outlook-tool send \
   --to seb.morand@gmail.com \
-  --subject "e2e outlook-mail $(date +%s)" \
+  --subject "e2e outlook-tool $(date +%s)" \
   --body "<h1>e2e</h1><p>test HTML</p>" \
   --attach ./README.md
 ```
@@ -32,19 +32,19 @@ Hier = `date -d yesterday +%Y-%m-%d` (ex: 2026-07-29). Créneau 03:00 -> 03:30.
 
 ```bash
 # create
-outlook-mail cal add --subject "e2e nuit" \
+outlook-tool cal add --subject "e2e nuit" \
   --start 2026-07-29T03:00:00 --end 2026-07-29T03:30:00 \
   --attendee seb.morand@gmail.com
 # note l'id retourné
 
 # read
-outlook-mail cal list --start 2026-07-29T00:00:00 --end 2026-07-30T00:00:00
+outlook-tool cal list --start 2026-07-29T00:00:00 --end 2026-07-30T00:00:00
 
 # update
-outlook-mail cal update <id> --subject "e2e nuit v2"
+outlook-tool cal update <id> --subject "e2e nuit v2"
 
 # delete (toujours nettoyer)
-outlook-mail cal delete <id>
+outlook-tool cal delete <id>
 ```
 
 Vérifier l'invitation reçue côté `seb.morand@gmail.com` (email-manager) et l'absence de

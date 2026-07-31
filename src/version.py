@@ -8,6 +8,6 @@ from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _package_version
 
 try:
-    __version__: str = _package_version("outlook-mail")
+    __version__: str = _package_version("outlook-tool")
 except PackageNotFoundError:  # pragma: no cover - only when running from a non-installed tree
     __version__ = "dev"

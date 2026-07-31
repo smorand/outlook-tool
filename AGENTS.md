@@ -1,4 +1,4 @@
-# outlook-mail
+# outlook-tool
 
 ## Overview
 
@@ -15,16 +15,16 @@ make sync      # installe les dépendances (uv)
 make check     # quality gate: lint, format-check, typecheck, security, test-cov (>=80%)
 make test      # tests
 make run ARGS='send --to ... --subject ...'
-make install   # installe la commande 'outlook-mail' (uv tool)
+make install   # installe la commande 'outlook-tool' (uv tool)
 ```
 
 ## Architecture (src/, layout flat)
 
-- `outlook_mail.py` : entry point Typer. Commandes: `login`, `send`, `version`,
+- `outlook_tool.py` : entry point Typer. Commandes: `login`, `send`, `version`,
   `mail list|get|read|search|archive|move|trash|mark-read|mark-unread|flag`, `cal add|list|update|delete`,
   `skill|skill learn`. Injection de dépendances dans
   `_with_services` (crée httpx client, Authenticator, GraphClient, services).
-- `config.py` : `Settings` (pydantic-settings, prefix `OUTLOOK_MAIL_`). Client ID Office
+- `config.py` : `Settings` (pydantic-settings, prefix `OUTLOOK_TOOL_`). Client ID Office
   public par défaut, scopes, chemin du cache token, seuils pièces jointes.
 - `auth.py` : `Authenticator`. Device code flow, cache token (0600, écriture atomique),
   refresh silencieux. `get_access_token()` lève `LoginRequiredError` si pas de token.
@@ -38,7 +38,7 @@ make install   # installe la commande 'outlook-mail' (uv tool)
 - `services/calendar.py` : `CalendarService`. `list_events` (calendarView + Prefer tz),
   `create_event`, `update_event`, `delete_event`.
 - `skill_cmd.py` : commandes `skill` / `skill learn`. `skill.md` embarqué + concaténation
-  des fichiers `~/.config/outlook-mail/*.md` (rules utilisateur).
+  des fichiers `~/.config/outlook-tool/*.md` (rules utilisateur).
 - `skill.md` : mode d'emploi complet pour agents IA (style email-manager).
 - `tracing.py`, `logging_config.py`, `version.py` : depuis le template python.
 
@@ -48,9 +48,9 @@ make install   # installe la commande 'outlook-mail' (uv tool)
 - `from __future__ import annotations` partout. Path/httpx en TYPE_CHECKING sauf quand
   pydantic (champ `Attachment.path`) ou Typer (options `--attach`) exigent le symbole au
   runtime (noqa TC003 ciblé).
-- Jamais de secret en dur; le cache token vit hors du repo (`~/.cache/outlook-mail/`).
+- Jamais de secret en dur; le cache token vit hors du repo (`~/.cache/outlook-tool/`).
 - Logs silencieux par défaut: sans flag = ERROR, `-v` = INFO, `-vv` = DEBUG (compteur Typer).
-  Fichiers app + otel toujours écrits dans `~/.cache/outlook-mail/` (via `Settings.log_dir`).
+  Fichiers app + otel toujours écrits dans `~/.cache/outlook-tool/` (via `Settings.log_dir`).
 
 ## Quality Gate
 
