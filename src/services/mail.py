@@ -90,13 +90,6 @@ class MailService:
             )
             start = end
 
-    async def list_messages(self, *, top: int = 10, folder: str = "inbox") -> list[MailSummary]:
-        """List recent messages from a mail folder, newest first."""
-        query = urlencode({"$top": top, "$select": _LIST_SELECT, "$orderby": "receivedDateTime desc"}, safe=" ,")
-        response = await self._graph.get(f"/me/mailFolders/{folder}/messages?{query}")
-        items = response.json().get("value", [])
-        return [MailSummary.from_graph(item) for item in items]
-
     async def search_messages(self, query: str, *, top: int = 10) -> list[MailSummary]:
         """Full-text search across the mailbox via Graph $search.
 
@@ -130,3 +123,36 @@ class MailService:
         response = await self._graph.get(f"/me/messages/{message_id}?{query}")
         item: dict[str, Any] = response.json()
         return item
+
+    async def mark_read(self, message_id: str, *, read: bool = True) -> None:
+        """Mark a message as read or unread."""
+        with trace_span("mail.mark_read", attributes={"mail.read": read}):
+            await self._graph.patch(f"/me/messages/{message_id}", json={"isRead": read})
+            logger.info("marked message %s read=%s", message_id, read)
+
+    async def trash_message(self, message_id: str) -> dict[str, Any]:
+        """Move a message to the Deleted Items folder."""
+        return await self.move_message(message_id, "deleteditems")
+
+    async def flag_message(self, message_id: str, *, unflag: bool = False) -> None:
+        """Set or clear the follow-up flag on a message."""
+        status = "notFlagged" if unflag else "flagged"
+        with trace_span("mail.flag", attributes={"mail.flag_status": status}):
+            await self._graph.patch(f"/me/messages/{message_id}", json={"flag": {"flagStatus": status}})
+            logger.info("flagged message %s status=%s", message_id, status)
+
+    async def list_messages(
+        self, *, top: int = 10, folder: str = "inbox", unread_only: bool = False
+    ) -> list[MailSummary]:
+        """List recent messages from a mail folder, newest first."""
+        params: dict[str, str | int] = {
+            "$top": top,
+            "$select": _LIST_SELECT,
+            "$orderby": "receivedDateTime desc",
+        }
+        if unread_only:
+            params["$filter"] = "isRead eq false"
+        query = urlencode(params, safe=" ,")
+        response = await self._graph.get(f"/me/mailFolders/{folder}/messages?{query}")
+        items = response.json().get("value", [])
+        return [MailSummary.from_graph(item) for item in items]

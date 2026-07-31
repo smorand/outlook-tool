@@ -21,7 +21,8 @@ make install   # installe la commande 'outlook-mail' (uv tool)
 ## Architecture (src/, layout flat)
 
 - `outlook_mail.py` : entry point Typer. Commandes: `login`, `send`, `version`,
-  `mail list|read|search|archive|move`, `cal add|list|update|delete`. Injection de dépendances dans
+  `mail list|get|read|search|archive|move|trash|mark-read|mark-unread|flag`, `cal add|list|update|delete`,
+  `skill|skill learn`. Injection de dépendances dans
   `_with_services` (crée httpx client, Authenticator, GraphClient, services).
 - `config.py` : `Settings` (pydantic-settings, prefix `OUTLOOK_MAIL_`). Client ID Office
   public par défaut, scopes, chemin du cache token, seuils pièces jointes.
@@ -32,10 +33,13 @@ make install   # installe la commande 'outlook-mail' (uv tool)
 - `models.py` : value models pydantic (`Recipient`, `Attachment`, `OutgoingMessage`,
   `MailSummary`, `CalendarEventInput`, `CalendarEventSummary`) + sérialisation Graph.
 - `services/mail.py` : `MailService`. Envoi inline (<= seuil) ou draft + upload session
-  (> seuil). `list_messages`, `search_messages` ($search), `get_message`,
-  `move_message`/`archive_message` (POST /me/messages/{id}/move, destinationId nom connu ou id).
+  (> seuil). `list_messages` (option `unread_only`), `search_messages` ($search), `get_message`,
+  `move_message`/`archive_message`/`trash_message`, `mark_read`, `flag_message`.
 - `services/calendar.py` : `CalendarService`. `list_events` (calendarView + Prefer tz),
   `create_event`, `update_event`, `delete_event`.
+- `skill_cmd.py` : commandes `skill` / `skill learn`. `skill.md` embarqué + concaténation
+  des fichiers `~/.config/outlook-mail/*.md` (rules utilisateur).
+- `skill.md` : mode d'emploi complet pour agents IA (style email-manager).
 - `tracing.py`, `logging_config.py`, `version.py` : depuis le template python.
 
 ## Conventions

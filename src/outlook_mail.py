@@ -22,6 +22,7 @@ from logging_config import setup_logging
 from models import Attachment, CalendarEventInput, OutgoingMessage, Recipient
 from services.calendar import CalendarService
 from services.mail import MailService
+from skill_cmd import register_skill_commands
 from tracing import configure_tracing
 from version import __version__
 
@@ -35,6 +36,7 @@ mail_app = typer.Typer(help="Read mail.")
 cal_app = typer.Typer(help="Manage calendar events.")
 app.add_typer(mail_app, name="mail")
 app.add_typer(cal_app, name="cal")
+register_skill_commands(app)
 
 type ServiceFn[T] = Callable[[Authenticator, MailService, CalendarService], Awaitable[T]]
 
@@ -153,17 +155,19 @@ def mail_list(
     ctx: typer.Context,
     top: Annotated[int, typer.Option("--top", "-n", help="Number of messages")] = 10,
     folder: Annotated[str, typer.Option("--folder", "-f", help="Mail folder")] = "inbox",
+    unread: Annotated[bool, typer.Option("--unread", help="Only unread messages")] = False,
     as_json: Annotated[bool, typer.Option("--json", help="Machine-readable JSON with full ids")] = False,
 ) -> None:
     """List recent messages in a folder."""
     settings: Settings = ctx.obj
 
     async def _do(_auth: Authenticator, mail: MailService, _cal: CalendarService) -> None:
-        messages = await mail.list_messages(top=top, folder=folder)
+        messages = await mail.list_messages(top=top, folder=folder, unread_only=unread)
         if as_json:
             typer.echo(json.dumps([m.model_dump() for m in messages], ensure_ascii=False))
             return
-        _render_mail_table(messages, f"{folder} (latest {len(messages)})")
+        title = f"{folder} ({'unread' if unread else 'latest'} {len(messages)})"
+        _render_mail_table(messages, title)
 
     _run(settings, _do)
 
@@ -184,6 +188,92 @@ def mail_search(
             typer.echo(json.dumps([m.model_dump() for m in messages], ensure_ascii=False))
             return
         _render_mail_table(messages, f"search '{query}' ({len(messages)})")
+
+    _run(settings, _do)
+
+
+@mail_app.command("get")
+def mail_get(
+    ctx: typer.Context,
+    message_id: Annotated[str, typer.Argument(help="Message id")],
+    as_json: Annotated[bool, typer.Option("--json", help="Machine-readable JSON")] = False,
+) -> None:
+    """Fetch a single message with its full body."""
+    settings: Settings = ctx.obj
+
+    async def _do(_auth: Authenticator, mail: MailService, _cal: CalendarService) -> None:
+        item = await mail.get_message(message_id)
+        if as_json:
+            typer.echo(json.dumps(item, ensure_ascii=False))
+            return
+        console.print(f"[bold]Subject:[/bold] {item.get('subject', '')}")
+        sender = (item.get("from") or {}).get("emailAddress", {}).get("address", "")
+        console.print(f"[bold]From:[/bold] {sender}")
+        console.print(f"[bold]Received:[/bold] {item.get('receivedDateTime', '')}")
+        body = item.get("body") or {}
+        console.print("\n" + str(body.get("content", "")))
+
+    _run(settings, _do)
+
+
+@mail_app.command("mark-read")
+def mail_mark_read(
+    ctx: typer.Context,
+    message_id: Annotated[str, typer.Argument(help="Message id")],
+) -> None:
+    """Mark a message as read."""
+    settings: Settings = ctx.obj
+
+    async def _do(_auth: Authenticator, mail: MailService, _cal: CalendarService) -> None:
+        await mail.mark_read(message_id, read=True)
+        console.print(f"[green]Marked read[/green] id={message_id}")
+
+    _run(settings, _do)
+
+
+@mail_app.command("mark-unread")
+def mail_mark_unread(
+    ctx: typer.Context,
+    message_id: Annotated[str, typer.Argument(help="Message id")],
+) -> None:
+    """Mark a message as unread."""
+    settings: Settings = ctx.obj
+
+    async def _do(_auth: Authenticator, mail: MailService, _cal: CalendarService) -> None:
+        await mail.mark_read(message_id, read=False)
+        console.print(f"[green]Marked unread[/green] id={message_id}")
+
+    _run(settings, _do)
+
+
+@mail_app.command("trash")
+def mail_trash(
+    ctx: typer.Context,
+    message_id: Annotated[str, typer.Argument(help="Message id")],
+) -> None:
+    """Move a message to the Deleted Items folder."""
+    settings: Settings = ctx.obj
+
+    async def _do(_auth: Authenticator, mail: MailService, _cal: CalendarService) -> None:
+        moved = await mail.trash_message(message_id)
+        console.print(f"[green]Trashed[/green] new id={moved.get('id', '')}")
+
+    _run(settings, _do)
+
+
+@mail_app.command("flag")
+def mail_flag(
+    ctx: typer.Context,
+    message_id: Annotated[str, typer.Argument(help="Message id")],
+    unflag: Annotated[bool, typer.Option("--unflag", help="Clear the flag instead of setting it")] = False,
+) -> None:
+    """Set (or clear) the follow-up flag on a message."""
+    settings: Settings = ctx.obj
+
+    async def _do(_auth: Authenticator, mail: MailService, _cal: CalendarService) -> None:
+        await mail.flag_message(message_id, unflag=unflag)
+        action = "Unflagged" if unflag else "Flagged"
+        console.print(f"[green]{action}[/green] id={message_id}")
 
     _run(settings, _do)
 
@@ -220,7 +310,7 @@ def mail_move(
 
 @mail_app.command("read")
 def mail_read(ctx: typer.Context, message_id: Annotated[str, typer.Argument(help="Message id")]) -> None:
-    """Show a message with its body."""
+    """Show a message with its body (alias for mail get)."""
     settings: Settings = ctx.obj
 
     async def _do(_auth: Authenticator, mail: MailService, _cal: CalendarService) -> None:

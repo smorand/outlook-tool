@@ -150,3 +150,69 @@ async def test_list_messages(settings: Settings, stub_auth: StubAuth) -> None:
         messages = await service.list_messages(top=5)
     assert len(messages) == 1
     assert messages[0].sender == "x@y.com"
+
+
+@respx.mock
+async def test_mark_read(settings: Settings, stub_auth: StubAuth) -> None:
+    """mark_read PATCHes isRead=True."""
+    route = respx.patch(f"{GRAPH}/me/messages/MSG").mock(return_value=httpx.Response(200, json={}))
+    async with httpx.AsyncClient() as client:
+        service = MailService(settings, GraphClient(settings, stub_auth, client))
+        await service.mark_read("MSG", read=True)
+    assert route.called
+    assert json.loads(route.calls.last.request.content) == {"isRead": True}
+
+
+@respx.mock
+async def test_mark_unread(settings: Settings, stub_auth: StubAuth) -> None:
+    """mark_read with read=False PATCHes isRead=False."""
+    route = respx.patch(f"{GRAPH}/me/messages/MSG").mock(return_value=httpx.Response(200, json={}))
+    async with httpx.AsyncClient() as client:
+        service = MailService(settings, GraphClient(settings, stub_auth, client))
+        await service.mark_read("MSG", read=False)
+    assert route.called
+    assert json.loads(route.calls.last.request.content) == {"isRead": False}
+
+
+@respx.mock
+async def test_trash_message(settings: Settings, stub_auth: StubAuth) -> None:
+    """trash_message delegates to move_message with deleteditems."""
+    route = respx.post(f"{GRAPH}/me/messages/MSG/move").mock(return_value=httpx.Response(201, json={"id": "NEW"}))
+    async with httpx.AsyncClient() as client:
+        service = MailService(settings, GraphClient(settings, stub_auth, client))
+        result = await service.trash_message("MSG")
+    assert result["id"] == "NEW"
+    assert json.loads(route.calls.last.request.content)["destinationId"] == "deleteditems"
+
+
+@respx.mock
+async def test_flag_message(settings: Settings, stub_auth: StubAuth) -> None:
+    """flag_message PATCHes the flag status."""
+    route = respx.patch(f"{GRAPH}/me/messages/MSG").mock(return_value=httpx.Response(200, json={}))
+    async with httpx.AsyncClient() as client:
+        service = MailService(settings, GraphClient(settings, stub_auth, client))
+        await service.flag_message("MSG")
+    assert json.loads(route.calls.last.request.content) == {"flag": {"flagStatus": "flagged"}}
+
+
+@respx.mock
+async def test_unflag_message(settings: Settings, stub_auth: StubAuth) -> None:
+    """flag_message with unflag=True PATCHes notFlagged."""
+    route = respx.patch(f"{GRAPH}/me/messages/MSG").mock(return_value=httpx.Response(200, json={}))
+    async with httpx.AsyncClient() as client:
+        service = MailService(settings, GraphClient(settings, stub_auth, client))
+        await service.flag_message("MSG", unflag=True)
+    assert json.loads(route.calls.last.request.content) == {"flag": {"flagStatus": "notFlagged"}}
+
+
+@respx.mock
+async def test_list_messages_unread_filter(settings: Settings, stub_auth: StubAuth) -> None:
+    """list_messages with unread_only=True adds $filter=isRead eq false."""
+    route = respx.get(url__regex=r".*/me/mailFolders/inbox/messages.*").mock(
+        return_value=httpx.Response(200, json={"value": []})
+    )
+    async with httpx.AsyncClient() as client:
+        service = MailService(settings, GraphClient(settings, stub_auth, client))
+        await service.list_messages(top=5, unread_only=True)
+    url_str = str(route.calls.last.request.url)
+    assert "isRead" in url_str or "%24filter" in url_str

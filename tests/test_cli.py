@@ -292,3 +292,171 @@ def test_login_command(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     result = runner.invoke(app, ["login"])
     assert result.exit_code == 0, result.stdout
     assert cache.exists()
+
+
+# ---------------------------------------------------------------------------
+# mail get
+# ---------------------------------------------------------------------------
+
+
+@respx.mock
+def test_mail_get_command(cli_env: Path) -> None:
+    """mail get prints subject/from/body."""
+    respx.get(url__regex=r".*/me/messages/MSG1.*").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "id": "MSG1",
+                "subject": "Get subject",
+                "from": {"emailAddress": {"address": "alice@corp.com"}},
+                "receivedDateTime": "2026-07-30T09:00:00Z",
+                "body": {"contentType": "HTML", "content": "body-content"},
+            },
+        )
+    )
+    result = runner.invoke(app, ["mail", "get", "MSG1"])
+    assert result.exit_code == 0, result.stdout
+    assert "body-content" in result.stdout
+
+
+@respx.mock
+def test_mail_get_json(cli_env: Path) -> None:
+    """mail get --json emits raw Graph JSON."""
+    respx.get(url__regex=r".*/me/messages/MSG2.*").mock(
+        return_value=httpx.Response(200, json={"id": "MSG2", "subject": "JS"})
+    )
+    result = runner.invoke(app, ["mail", "get", "MSG2", "--json"])
+    assert result.exit_code == 0, result.stdout
+    parsed = json.loads(result.stdout)
+    assert parsed["id"] == "MSG2"
+
+
+# ---------------------------------------------------------------------------
+# mail mark-read / mark-unread
+# ---------------------------------------------------------------------------
+
+
+@respx.mock
+def test_mail_mark_read_command(cli_env: Path) -> None:
+    """mail mark-read PATCHes isRead=true."""
+    route = respx.patch(f"{GRAPH}/me/messages/MSG3").mock(return_value=httpx.Response(200, json={}))
+    result = runner.invoke(app, ["mail", "mark-read", "MSG3"])
+    assert result.exit_code == 0, result.stdout
+    assert route.called
+    assert json.loads(route.calls.last.request.content) == {"isRead": True}
+
+
+@respx.mock
+def test_mail_mark_unread_command(cli_env: Path) -> None:
+    """mail mark-unread PATCHes isRead=false."""
+    route = respx.patch(f"{GRAPH}/me/messages/MSG4").mock(return_value=httpx.Response(200, json={}))
+    result = runner.invoke(app, ["mail", "mark-unread", "MSG4"])
+    assert result.exit_code == 0, result.stdout
+    assert json.loads(route.calls.last.request.content) == {"isRead": False}
+
+
+# ---------------------------------------------------------------------------
+# mail trash
+# ---------------------------------------------------------------------------
+
+
+@respx.mock
+def test_mail_trash_command(cli_env: Path) -> None:
+    """mail trash moves to deleteditems."""
+    route = respx.post(f"{GRAPH}/me/messages/MSG5/move").mock(return_value=httpx.Response(201, json={"id": "MSG5-NEW"}))
+    result = runner.invoke(app, ["mail", "trash", "MSG5"])
+    assert result.exit_code == 0, result.stdout
+    assert route.called
+    assert json.loads(route.calls.last.request.content)["destinationId"] == "deleteditems"
+
+
+# ---------------------------------------------------------------------------
+# mail flag / unflag
+# ---------------------------------------------------------------------------
+
+
+@respx.mock
+def test_mail_flag_command(cli_env: Path) -> None:
+    """mail flag sets flagStatus=flagged."""
+    route = respx.patch(f"{GRAPH}/me/messages/MSG6").mock(return_value=httpx.Response(200, json={}))
+    result = runner.invoke(app, ["mail", "flag", "MSG6"])
+    assert result.exit_code == 0, result.stdout
+    assert json.loads(route.calls.last.request.content) == {"flag": {"flagStatus": "flagged"}}
+
+
+@respx.mock
+def test_mail_unflag_command(cli_env: Path) -> None:
+    """mail flag --unflag sets flagStatus=notFlagged."""
+    route = respx.patch(f"{GRAPH}/me/messages/MSG7").mock(return_value=httpx.Response(200, json={}))
+    result = runner.invoke(app, ["mail", "flag", "MSG7", "--unflag"])
+    assert result.exit_code == 0, result.stdout
+    assert json.loads(route.calls.last.request.content) == {"flag": {"flagStatus": "notFlagged"}}
+
+
+# ---------------------------------------------------------------------------
+# mail list --unread
+# ---------------------------------------------------------------------------
+
+
+@respx.mock
+def test_mail_list_unread_flag(cli_env: Path) -> None:
+    """mail list --unread passes $filter=isRead eq false to Graph."""
+    route = respx.get(url__regex=r".*/me/mailFolders/inbox/messages.*").mock(
+        return_value=httpx.Response(200, json={"value": []})
+    )
+    result = runner.invoke(app, ["mail", "list", "--unread", "--top", "5"])
+    assert result.exit_code == 0, result.stdout
+    assert "%24filter" in str(route.calls.last.request.url) or "$filter" in str(route.calls.last.request.url)
+
+
+# ---------------------------------------------------------------------------
+# skill / skill learn
+# ---------------------------------------------------------------------------
+
+
+def test_skill_prints_embedded(cli_env: Path) -> None:
+    """outlook-mail skill prints the embedded skill.md."""
+    result = runner.invoke(app, ["skill"])
+    assert result.exit_code == 0, result.stdout
+    assert "outlook-mail" in result.stdout.lower()
+
+
+def test_skill_includes_user_knowledge(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """skill concatenates .md files from XDG_CONFIG_HOME/outlook-mail."""
+    monkeypatch.chdir(tmp_path)
+    cache = tmp_path / "token.json"
+    cache.write_text(TokenSet(access_token="tok", expires_at=time.time() + 3600).model_dump_json())
+    monkeypatch.setenv("OUTLOOK_MAIL_TOKEN_CACHE_PATH", str(cache))
+
+    config_dir = tmp_path / "config" / "outlook-mail"
+    config_dir.mkdir(parents=True)
+    (config_dir / "regles-tri.md").write_text("- règle test\n")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+
+    result = runner.invoke(app, ["skill"])
+    assert result.exit_code == 0, result.stdout
+    assert "règle test" in result.stdout
+
+
+def test_skill_learn_appends_rule(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """skill learn --rule appends a timestamped entry to regles-tri.md."""
+    monkeypatch.chdir(tmp_path)
+    cache = tmp_path / "token.json"
+    cache.write_text(TokenSet(access_token="tok", expires_at=time.time() + 3600).model_dump_json())
+    monkeypatch.setenv("OUTLOOK_MAIL_TOKEN_CACHE_PATH", str(cache))
+
+    config_dir = tmp_path / "config" / "outlook-mail"
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+
+    result = runner.invoke(app, ["skill", "learn", "--rule", "always archive iec@us.ibm.com"])
+    assert result.exit_code == 0, result.output
+    rules_path = config_dir / "regles-tri.md"
+    assert rules_path.exists()
+    content = rules_path.read_text()
+    assert "always archive iec@us.ibm.com" in content
+
+
+def test_skill_learn_requires_rule(cli_env: Path) -> None:
+    """skill learn without --rule exits with code 2."""
+    result = runner.invoke(app, ["skill", "learn"])
+    assert result.exit_code != 0
