@@ -150,6 +150,41 @@ def send(
     _run(settings, _do)
 
 
+@app.command()
+def draft(
+    ctx: typer.Context,
+    to: Annotated[list[str], typer.Option("--to", help="Recipient (repeatable). 'Name <a@b>' or 'a@b'")],
+    subject: Annotated[str, typer.Option("--subject", "-s", help="Subject")],
+    body: Annotated[str | None, typer.Option("--body", "-b", help="Body content")] = None,
+    body_file: Annotated[Path | None, typer.Option("--body-file", help="Read body from file")] = None,
+    cc: Annotated[list[str] | None, typer.Option("--cc", help="Cc recipient (repeatable)")] = None,
+    bcc: Annotated[list[str] | None, typer.Option("--bcc", help="Bcc recipient (repeatable)")] = None,
+    attach: Annotated[list[Path] | None, typer.Option("--attach", "-a", help="Attachment path (repeatable)")] = None,
+    html: Annotated[bool, typer.Option("--html/--text", help="Body is HTML (default) or plain text")] = True,
+) -> None:
+    """Save a draft in Outlook (does not send — opens ready to review)."""
+    settings: Settings = ctx.obj
+    if body is None and body_file is None:
+        console.print("[red]provide --body or --body-file[/red]")
+        raise typer.Exit(code=2)
+    content = body if body is not None else body_file.read_text(encoding="utf-8")  # type: ignore[union-attr]
+    message = OutgoingMessage(
+        subject=subject,
+        body=content,
+        is_html=html,
+        to=[Recipient.parse(r) for r in to],
+        cc=[Recipient.parse(r) for r in (cc or [])],
+        bcc=[Recipient.parse(r) for r in (bcc or [])],
+        attachments=[Attachment.from_path(p) for p in (attach or [])],
+    )
+
+    async def _do(_auth: Authenticator, mail: MailService, _cal: CalendarService) -> None:
+        saved = await mail.create_draft(message)
+        console.print(f"[green]Draft saved[/green] '{subject}' id={saved.get('id', '')[:16]}")
+
+    _run(settings, _do)
+
+
 @mail_app.command("list")
 def mail_list(
     ctx: typer.Context,

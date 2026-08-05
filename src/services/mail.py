@@ -129,6 +129,22 @@ class MailService:
             )
             start = end
 
+    async def create_draft(self, message: OutgoingMessage) -> dict[str, Any]:
+        """Save a message as a draft (does not send it).
+
+        For large attachments the same upload-session path as _send_via_draft
+        is used; the draft is left in the Drafts folder without being sent.
+        """
+        with trace_span("mail.create_draft", attributes={"mail.attachments": len(message.attachments)}):
+            draft: dict[str, Any] = (
+                await self._graph.post("/me/messages", json=message.to_graph_message(include_attachments=False))
+            ).json()
+            message_id = str(draft["id"])
+            for attachment in message.attachments:
+                await self._add_attachment(message_id, attachment)
+            logger.info("saved draft '%s' id=%s", message.subject, message_id)
+            return draft
+
     async def search_messages(self, query: str, *, top: int = 10) -> list[MailSummary]:
         """Full-text search across the mailbox via Graph $search.
 

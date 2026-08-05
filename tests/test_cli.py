@@ -60,6 +60,32 @@ def test_send_requires_body(cli_env: Path) -> None:
     assert result.exit_code == 2
 
 
+@respx.mock
+def test_draft_command(cli_env: Path) -> None:
+    """draft with a cached token creates a message in Drafts and does not call /send."""
+    draft_route = respx.post(f"{GRAPH}/me/messages").mock(
+        return_value=httpx.Response(201, json={"id": "DRAFTX", "isDraft": True})
+    )
+    send_route = respx.post(f"{GRAPH}/me/messages/DRAFTX/send").mock(
+        return_value=httpx.Response(202)
+    )
+    result = runner.invoke(
+        app,
+        ["draft", "--to", "kelly@ibm.com", "--subject", "Re: RFP", "--body", "<p>Body</p>"],
+    )
+    assert result.exit_code == 0, result.stdout
+    assert draft_route.called
+    assert not send_route.called
+    assert "Draft saved" in result.stdout
+
+
+@respx.mock
+def test_draft_requires_body(cli_env: Path) -> None:
+    """draft without a body exits with code 2."""
+    result = runner.invoke(app, ["draft", "--to", "a@b.com", "--subject", "s"])
+    assert result.exit_code == 2
+
+
 def test_login_required_without_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A command with no cached token exits with the login-required code."""
     monkeypatch.chdir(tmp_path)

@@ -85,6 +85,54 @@ async def test_send_via_draft_with_upload_session(settings: Settings, stub_auth:
 
 
 @respx.mock
+async def test_create_draft_small_message(settings: Settings, stub_auth: StubAuth) -> None:
+    """create_draft posts to /me/messages and does NOT call /send."""
+    draft_route = respx.post(f"{GRAPH}/me/messages").mock(
+        return_value=httpx.Response(201, json={"id": "DRAFT1", "isDraft": True})
+    )
+    send_route = respx.post(f"{GRAPH}/me/messages/DRAFT1/send").mock(
+        return_value=httpx.Response(202)
+    )
+
+    message = _message()
+    async with httpx.AsyncClient() as client:
+        service = MailService(settings, GraphClient(settings, stub_auth, client))
+        result = await service.create_draft(message)
+
+    assert draft_route.called
+    assert not send_route.called
+    assert result["id"] == "DRAFT1"
+    assert result["isDraft"] is True
+
+
+@respx.mock
+async def test_create_draft_with_attachment(settings: Settings, stub_auth: StubAuth, tmp_path: Path) -> None:
+    """create_draft uploads attachments without sending."""
+    small = tmp_path / "report.pdf"
+    small.write_bytes(b"PDF")
+
+    draft_route = respx.post(f"{GRAPH}/me/messages").mock(
+        return_value=httpx.Response(201, json={"id": "DRAFT2", "isDraft": True})
+    )
+    attach_route = respx.post(f"{GRAPH}/me/messages/DRAFT2/attachments").mock(
+        return_value=httpx.Response(201, json={})
+    )
+    send_route = respx.post(f"{GRAPH}/me/messages/DRAFT2/send").mock(
+        return_value=httpx.Response(202)
+    )
+
+    message = _message(attachments=[Attachment.from_path(small)])
+    async with httpx.AsyncClient() as client:
+        service = MailService(settings, GraphClient(settings, stub_auth, client))
+        result = await service.create_draft(message)
+
+    assert draft_route.called
+    assert attach_route.called
+    assert not send_route.called
+    assert result["id"] == "DRAFT2"
+
+
+@respx.mock
 async def test_search_messages(settings: Settings, stub_auth: StubAuth) -> None:
     """search_messages issues a $search query and parses summaries."""
     route = respx.get(url__regex=r".*/me/messages\?.*").mock(

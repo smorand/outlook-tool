@@ -198,6 +198,55 @@ sortie de `outlook-tool skill` :
 
 Ces fichiers sont concaténés automatiquement à chaque appel à `outlook-tool skill`.
 
+## Commandes d'envoi
+
+```bash
+# Envoyer directement
+outlook-tool send \
+  --to "Name <a@b.com>" --cc "c@d.com" \
+  --subject "Sujet" \
+  --body "<p>Corps HTML</p>" \
+  --attach ./fichier.pdf
+
+# Sauvegarder comme brouillon (à envoyer depuis Outlook)
+outlook-tool draft \
+  --to "Name <a@b.com>" --cc "c@d.com" \
+  --subject "Sujet" \
+  --body "<p>Corps HTML</p>" \
+  --attach ./fichier.pdf
+```
+
+Préférer `draft` quand l'utilisateur veut relire avant envoi.
+
+**IMPÉRATIF** : tout email envoyé via `outlook-tool send` doit être soigné visuellement.
+L'outil envoie en HTML par défaut — en tirer parti systématiquement.
+
+Règles à respecter :
+- Utiliser des paragraphes `<p>` séparés, jamais un bloc de texte continu
+- Structurer avec `<ol>` / `<ul>` quand il y a une liste de points
+- Mettre en gras `<strong>` les éléments importants
+- Les liens doivent être cliquables avec texte descriptif : `<a href="...">Nom du fichier</a>`, jamais une URL brute
+- Terminer par une signature claire (`<p>Cordialement,<br>Sébastien</p>` ou équivalent)
+- Aérer : un `<br>` entre la salutation et le corps, un `<br>` avant la signature
+
+Exemple de structure minimale :
+```html
+<p>Bonjour Prénom,</p>
+
+<p>Corps du message en un ou plusieurs paragraphes.</p>
+
+<ol>
+  <li>Point 1</li>
+  <li>Point 2</li>
+</ol>
+
+<p>Lien : <a href="https://...">Nom du document</a></p>
+
+<p>Cordialement,<br>Sébastien</p>
+```
+
+---
+
 ## Confirmation utilisateur OBLIGATOIRE avant action
 
 - Envoi d'un email au nom de l'utilisateur
