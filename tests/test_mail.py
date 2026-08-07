@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 from typing import TYPE_CHECKING
 
@@ -9,7 +10,7 @@ import httpx
 import respx
 
 from graph_client import GraphClient
-from models import Attachment, OutgoingMessage, Recipient
+from models import Attachment, AttachmentSummary, OutgoingMessage, Recipient
 from services.mail import MailService
 
 if TYPE_CHECKING:
@@ -90,9 +91,7 @@ async def test_create_draft_small_message(settings: Settings, stub_auth: StubAut
     draft_route = respx.post(f"{GRAPH}/me/messages").mock(
         return_value=httpx.Response(201, json={"id": "DRAFT1", "isDraft": True})
     )
-    send_route = respx.post(f"{GRAPH}/me/messages/DRAFT1/send").mock(
-        return_value=httpx.Response(202)
-    )
+    send_route = respx.post(f"{GRAPH}/me/messages/DRAFT1/send").mock(return_value=httpx.Response(202))
 
     message = _message()
     async with httpx.AsyncClient() as client:
@@ -114,12 +113,8 @@ async def test_create_draft_with_attachment(settings: Settings, stub_auth: StubA
     draft_route = respx.post(f"{GRAPH}/me/messages").mock(
         return_value=httpx.Response(201, json={"id": "DRAFT2", "isDraft": True})
     )
-    attach_route = respx.post(f"{GRAPH}/me/messages/DRAFT2/attachments").mock(
-        return_value=httpx.Response(201, json={})
-    )
-    send_route = respx.post(f"{GRAPH}/me/messages/DRAFT2/send").mock(
-        return_value=httpx.Response(202)
-    )
+    attach_route = respx.post(f"{GRAPH}/me/messages/DRAFT2/attachments").mock(return_value=httpx.Response(201, json={}))
+    send_route = respx.post(f"{GRAPH}/me/messages/DRAFT2/send").mock(return_value=httpx.Response(202))
 
     message = _message(attachments=[Attachment.from_path(small)])
     async with httpx.AsyncClient() as client:
@@ -171,6 +166,71 @@ async def test_move_and_archive_message(settings: Settings, stub_auth: StubAuth)
         assert json.loads(route.calls.last.request.content)["destinationId"] == "deleteditems"
         await service.archive_message("MSG")
         assert json.loads(route.calls.last.request.content)["destinationId"] == "archive"
+
+
+@respx.mock
+async def test_list_attachments(settings: Settings, stub_auth: StubAuth) -> None:
+    """list_attachments parses Graph attachment metadata into summaries."""
+    respx.get(url__regex=r".*/me/messages/MSG/attachments\?.*").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "value": [
+                    {
+                        "id": "ATT1",
+                        "name": "report.docx",
+                        "contentType": "application/vnd.doc",
+                        "size": 1234,
+                        "isInline": False,
+                    },
+                    {"id": "ATT2", "name": "image001.jpg", "contentType": "image/jpeg", "size": 999, "isInline": True},
+                ]
+            },
+        )
+    )
+    async with httpx.AsyncClient() as client:
+        service = MailService(settings, GraphClient(settings, stub_auth, client))
+        items = await service.list_attachments("MSG")
+    assert len(items) == 2
+    assert items[0] == AttachmentSummary(
+        id="ATT1", name="report.docx", content_type="application/vnd.doc", size=1234, is_inline=False
+    )
+    assert items[1].is_inline is True
+
+
+@respx.mock
+async def test_download_attachment_inline_content(settings: Settings, stub_auth: StubAuth) -> None:
+    """download_attachment decodes contentBytes when Graph inlines it."""
+    raw = b"hello world"
+    respx.get(url__regex=r".*/me/messages/MSG/attachments/ATT1$").mock(
+        return_value=httpx.Response(
+            200,
+            json={"id": "ATT1", "name": "note.txt", "contentBytes": base64.b64encode(raw).decode("ascii")},
+        )
+    )
+    async with httpx.AsyncClient() as client:
+        service = MailService(settings, GraphClient(settings, stub_auth, client))
+        name, data = await service.download_attachment("MSG", "ATT1")
+    assert name == "note.txt"
+    assert data == raw
+
+
+@respx.mock
+async def test_download_attachment_value_fallback(settings: Settings, stub_auth: StubAuth) -> None:
+    """download_attachment falls back to /$value when contentBytes is absent."""
+    raw = b"\x00\x01\x02binary"
+    respx.get(url__regex=r".*/me/messages/MSG/attachments/ATT2$").mock(
+        return_value=httpx.Response(200, json={"id": "ATT2", "name": "big.bin"})
+    )
+    value_route = respx.get(url__regex=r".*/me/messages/MSG/attachments/ATT2/\$value$").mock(
+        return_value=httpx.Response(200, content=raw)
+    )
+    async with httpx.AsyncClient() as client:
+        service = MailService(settings, GraphClient(settings, stub_auth, client))
+        name, data = await service.download_attachment("MSG", "ATT2")
+    assert value_route.called
+    assert name == "big.bin"
+    assert data == raw
 
 
 @respx.mock
@@ -320,9 +380,7 @@ async def test_get_message_uses_eventmessage_cast_for_meeting(settings: Settings
         "body": {"contentType": "Text", "content": "join us"},
     }
     # First request: plain /me/messages/{id} to detect @odata.type
-    respx.get(url__regex=r".*/me/messages/MEET1\?").mock(
-        return_value=httpx.Response(200, json=meeting_payload)
-    )
+    respx.get(url__regex=r".*/me/messages/MEET1\?").mock(return_value=httpx.Response(200, json=meeting_payload))
     # Second request: cast URL — must NOT contain startDateTime in $select
     cast_route = respx.get(url__regex=r".*/me/messages/MEET1/microsoft\.graph\.eventMessage.*").mock(
         return_value=httpx.Response(200, json=meeting_payload)

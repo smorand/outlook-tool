@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import time
 from typing import TYPE_CHECKING
@@ -66,9 +67,7 @@ def test_draft_command(cli_env: Path) -> None:
     draft_route = respx.post(f"{GRAPH}/me/messages").mock(
         return_value=httpx.Response(201, json={"id": "DRAFTX", "isDraft": True})
     )
-    send_route = respx.post(f"{GRAPH}/me/messages/DRAFTX/send").mock(
-        return_value=httpx.Response(202)
-    )
+    send_route = respx.post(f"{GRAPH}/me/messages/DRAFTX/send").mock(return_value=httpx.Response(202))
     result = runner.invoke(
         app,
         ["draft", "--to", "kelly@ibm.com", "--subject", "Re: RFP", "--body", "<p>Body</p>"],
@@ -235,6 +234,69 @@ def test_mail_read_command(cli_env: Path) -> None:
     result = runner.invoke(app, ["mail", "read", "A"])
     assert result.exit_code == 0, result.stdout
     assert "the-body" in result.stdout
+
+
+@respx.mock
+def test_mail_attachments_command(cli_env: Path) -> None:
+    """mail attachments lists attachment metadata."""
+    respx.get(url__regex=r".*/me/messages/MSG/attachments\?.*").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "value": [
+                    {"id": "ATT1", "name": "report.docx", "contentType": "application/x", "size": 42, "isInline": False}
+                ]
+            },
+        )
+    )
+    result = runner.invoke(app, ["mail", "attachments", "MSG"])
+    assert result.exit_code == 0, result.stdout
+    assert "report.docx" in result.stdout
+
+
+@respx.mock
+def test_mail_download_command(cli_env: Path) -> None:
+    """mail download writes non-inline attachments to the output dir."""
+    respx.get(url__regex=r".*/me/messages/MSG/attachments\?.*").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "value": [
+                    {"id": "ATT1", "name": "report.txt", "contentType": "text/plain", "size": 3, "isInline": False},
+                    {"id": "IMG", "name": "logo.png", "contentType": "image/png", "size": 3, "isInline": True},
+                ]
+            },
+        )
+    )
+    respx.get(url__regex=r".*/me/messages/MSG/attachments/ATT1$").mock(
+        return_value=httpx.Response(
+            200, json={"id": "ATT1", "name": "report.txt", "contentBytes": base64.b64encode(b"abc").decode()}
+        )
+    )
+    out_dir = cli_env.parent
+    result = runner.invoke(app, ["mail", "download", "MSG", "--out", str(out_dir)])
+    assert result.exit_code == 0, result.stdout
+    saved = out_dir / "report.txt"
+    assert saved.read_bytes() == b"abc"
+    # inline image is skipped by default
+    assert not (out_dir / "logo.png").exists()
+
+
+@respx.mock
+def test_mail_download_no_match(cli_env: Path) -> None:
+    """mail download exits 1 when no attachment matches the filter."""
+    respx.get(url__regex=r".*/me/messages/MSG/attachments\?.*").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "value": [
+                    {"id": "ATT1", "name": "report.txt", "contentType": "text/plain", "size": 3, "isInline": False}
+                ]
+            },
+        )
+    )
+    result = runner.invoke(app, ["mail", "download", "MSG", "--name", "nomatch", "--out", str(cli_env.parent)])
+    assert result.exit_code == 1
 
 
 @respx.mock
@@ -592,9 +654,7 @@ def test_mail_get_json_exposes_meeting_datetimes(cli_env: Path) -> None:
         "body": {"contentType": "Text", "content": "join us"},
     }
     # First: plain message fetch to detect @odata.type
-    respx.get(url__regex=r".*/me/messages/MEET9\?").mock(
-        return_value=httpx.Response(200, json=meeting_payload)
-    )
+    respx.get(url__regex=r".*/me/messages/MEET9\?").mock(return_value=httpx.Response(200, json=meeting_payload))
     # Second: cast URL fetch
     respx.get(url__regex=r".*/me/messages/MEET9/microsoft\.graph\.eventMessage.*").mock(
         return_value=httpx.Response(200, json=meeting_payload)

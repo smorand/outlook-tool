@@ -74,6 +74,30 @@ class Attachment(BaseModel):
         }
 
 
+class AttachmentSummary(BaseModel):
+    """A lightweight summary of a message attachment (metadata only)."""
+
+    model_config = {"frozen": True}
+
+    id: str
+    name: str
+    content_type: str
+    size: int
+    is_inline: bool
+
+    @classmethod
+    def from_graph(cls, item: dict[str, object]) -> AttachmentSummary:
+        """Build a summary from a Graph attachment resource."""
+        size = item.get("size") or 0
+        return cls(
+            id=str(item.get("id", "")),
+            name=str(item.get("name") or "(unnamed)"),
+            content_type=str(item.get("contentType") or "application/octet-stream"),
+            size=int(size) if isinstance(size, (int, str)) else 0,
+            is_inline=bool(item.get("isInline", False)),
+        )
+
+
 class OutgoingMessage(BaseModel):
     """A message to send via Graph sendMail."""
 

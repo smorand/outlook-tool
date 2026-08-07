@@ -7,7 +7,7 @@ import json
 import logging
 import webbrowser
 from collections.abc import Awaitable, Callable
-from pathlib import Path  # noqa: TC003 - runtime type used by Typer option resolution
+from pathlib import Path
 from typing import Annotated, Any
 
 import httpx
@@ -360,6 +360,69 @@ def mail_read(ctx: typer.Context, message_id: Annotated[str, typer.Argument(help
     _run(settings, _do)
 
 
+@mail_app.command("attachments")
+def mail_attachments(
+    ctx: typer.Context,
+    message_id: Annotated[str, typer.Argument(help="Message id")],
+    as_json: Annotated[bool, typer.Option("--json", help="Machine-readable JSON with full ids")] = False,
+) -> None:
+    """List a message's attachments (name, size, id)."""
+    settings: Settings = ctx.obj
+
+    async def _do(_auth: Authenticator, mail: MailService, _cal: CalendarService) -> None:
+        items = await mail.list_attachments(message_id)
+        if as_json:
+            typer.echo(json.dumps([a.model_dump() for a in items], ensure_ascii=False))
+            return
+        table = Table(title=f"attachments ({len(items)})")
+        table.add_column("name")
+        table.add_column("size", justify="right", style="cyan")
+        table.add_column("type", style="magenta")
+        table.add_column("inline", justify="center")
+        table.add_column("id", style="dim", no_wrap=True)
+        for att in items:
+            table.add_row(att.name, str(att.size), att.content_type, "yes" if att.is_inline else "", att.id[:16])
+        console.print(table)
+
+    _run(settings, _do)
+
+
+@mail_app.command("download")
+def mail_download(
+    ctx: typer.Context,
+    message_id: Annotated[str, typer.Argument(help="Message id")],
+    out: Annotated[
+        Path | None, typer.Option("--out", "-o", help="Destination directory (default: current dir)")
+    ] = None,
+    name: Annotated[
+        str | None, typer.Option("--name", help="Only download attachments whose filename contains this text")
+    ] = None,
+    include_inline: Annotated[
+        bool, typer.Option("--include-inline", help="Also download inline attachments (e.g. embedded images)")
+    ] = False,
+) -> None:
+    """Download a message's attachments to a directory (default: current dir)."""
+    settings: Settings = ctx.obj
+    out_dir = out.expanduser() if out is not None else Path.cwd()
+
+    async def _do(_auth: Authenticator, mail: MailService, _cal: CalendarService) -> None:
+        items = await mail.list_attachments(message_id)
+        selected = [
+            a for a in items if (include_inline or not a.is_inline) and (name is None or name.lower() in a.name.lower())
+        ]
+        if not selected:
+            console.print("[yellow]No matching attachment.[/yellow]")
+            raise typer.Exit(code=1)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        for att in selected:
+            filename, data = await mail.download_attachment(message_id, att.id)
+            dest = out_dir / filename
+            dest.write_bytes(data)
+            console.print(f"[green]Saved[/green] {dest} ({len(data)} bytes)")
+
+    _run(settings, _do)
+
+
 @cal_app.command("list")
 def cal_list(
     ctx: typer.Context,
@@ -399,7 +462,9 @@ def cal_add(
     location: Annotated[str | None, typer.Option("--location", help="Location")] = None,
     body: Annotated[str | None, typer.Option("--body", help="Event body")] = None,
     attendee: Annotated[list[str] | None, typer.Option("--attendee", help="Attendee (repeatable)")] = None,
-    show_as: Annotated[str | None, typer.Option("--show-as", help="Status: free|tentative|busy|oof|workingElsewhere|unknown")] = None,
+    show_as: Annotated[
+        str | None, typer.Option("--show-as", help="Status: free|tentative|busy|oof|workingElsewhere|unknown")
+    ] = None,
 ) -> None:
     """Create a calendar event."""
     settings: Settings = ctx.obj
@@ -429,7 +494,9 @@ def cal_update(
     start: Annotated[str | None, typer.Option("--start")] = None,
     end: Annotated[str | None, typer.Option("--end")] = None,
     tz: Annotated[str, typer.Option("--tz")] = "Europe/Paris",
-    show_as: Annotated[str | None, typer.Option("--show-as", help="Status: free|tentative|busy|oof|workingElsewhere|unknown")] = None,
+    show_as: Annotated[
+        str | None, typer.Option("--show-as", help="Status: free|tentative|busy|oof|workingElsewhere|unknown")
+    ] = None,
 ) -> None:
     """Update fields on an existing event."""
     settings: Settings = ctx.obj

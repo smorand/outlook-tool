@@ -49,6 +49,11 @@ outlook-tool mail search "from:alice subject:report" --top 10
 outlook-tool mail archive <message-id>                 # -> dossier Archive
 outlook-tool mail move <message-id> deleteditems       # dossier (nom connu ou id)
 
+# Pièces jointes (lecture)
+outlook-tool mail attachments <message-id>             # lister nom / taille / id
+outlook-tool mail download <message-id> --out ~/Downloads          # télécharger les PJ
+outlook-tool mail download <message-id> --name "rapport" --out .   # filtrer par nom
+
 # 4. Calendrier
 outlook-tool cal add --subject "Nuit" \
   --start 2026-07-29T03:00:00 --end 2026-07-29T03:30:00 \

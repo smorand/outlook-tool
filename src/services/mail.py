@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import base64
 import logging
 from html.parser import HTMLParser
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlencode
 
-from models import Attachment, MailSummary, OutgoingMessage
+from models import Attachment, AttachmentSummary, MailSummary, OutgoingMessage
 from tracing import trace_span
 
 if TYPE_CHECKING:
@@ -189,9 +190,7 @@ class MailService:
             # Use the OData cast segment: Graph returns startDateTime/endDateTime
             # for event messages but rejects them in $select on /me/messages.
             query2 = urlencode({"$select": _READ_SELECT_MEETING}, safe=" ,")
-            response2 = await self._graph.get(
-                f"/me/messages/{message_id}/microsoft.graph.eventMessage?{query2}"
-            )
+            response2 = await self._graph.get(f"/me/messages/{message_id}/microsoft.graph.eventMessage?{query2}")
             item = response2.json()
         return item
 
@@ -220,6 +219,30 @@ class MailService:
         with trace_span("mail.flag", attributes={"mail.flag_status": status}):
             await self._graph.patch(f"/me/messages/{message_id}", json={"flag": {"flagStatus": status}})
             logger.info("flagged message %s status=%s", message_id, status)
+
+    async def list_attachments(self, message_id: str) -> list[AttachmentSummary]:
+        """List a message's attachments (metadata only, no content)."""
+        params = urlencode({"$select": "id,name,contentType,size,isInline"}, safe=" ,")
+        response = await self._graph.get(f"/me/messages/{message_id}/attachments?{params}")
+        items = response.json().get("value", [])
+        return [AttachmentSummary.from_graph(item) for item in items]
+
+    async def download_attachment(self, message_id: str, attachment_id: str) -> tuple[str, bytes]:
+        """Download one attachment, returning (filename, raw bytes).
+
+        Graph inlines contentBytes for fileAttachments up to a few MB; when it is
+        absent (large files, itemAttachment, referenceAttachment) the raw content
+        is fetched from the /$value endpoint instead.
+        """
+        with trace_span("mail.download_attachment"):
+            response = await self._graph.get(f"/me/messages/{message_id}/attachments/{attachment_id}")
+            item = response.json()
+            name = str(item.get("name") or attachment_id)
+            content_b64 = item.get("contentBytes")
+            if isinstance(content_b64, str):
+                return name, base64.b64decode(content_b64)
+            value = await self._graph.get(f"/me/messages/{message_id}/attachments/{attachment_id}/$value")
+            return name, value.content
 
     async def list_messages(
         self, *, top: int = 10, folder: str = "inbox", unread_only: bool = False

@@ -21,7 +21,7 @@ make install   # installe la commande 'outlook-tool' (uv tool)
 ## Architecture (src/, layout flat)
 
 - `outlook_tool.py` : entry point Typer. Commandes: `login`, `send`, `version`,
-  `mail list|get|read|search|archive|move|trash|mark-read|mark-unread|flag`, `cal add|list|update|delete`,
+  `mail list|get|read|search|archive|move|trash|mark-read|mark-unread|flag|attachments|download`, `cal add|list|update|delete`,
   `skill|skill learn`. Injection de dépendances dans
   `_with_services` (crée httpx client, Authenticator, GraphClient, services).
 - `config.py` : `Settings` (pydantic-settings, prefix `OUTLOOK_TOOL_`). Client ID Office
@@ -31,10 +31,11 @@ make install   # installe la commande 'outlook-tool' (uv tool)
 - `graph_client.py` : `GraphClient`, wrapper httpx async qui injecte le bearer et lève
   `GraphError` sur statut >= 400. Param `authenticated=False` pour les PUT d'upload session.
 - `models.py` : value models pydantic (`Recipient`, `Attachment`, `OutgoingMessage`,
-  `MailSummary`, `CalendarEventInput`, `CalendarEventSummary`) + sérialisation Graph.
+  `MailSummary`, `AttachmentSummary`, `CalendarEventInput`, `CalendarEventSummary`) + sérialisation Graph.
 - `services/mail.py` : `MailService`. Envoi inline (<= seuil) ou draft + upload session
   (> seuil). `list_messages` (option `unread_only`), `search_messages` ($search), `get_message`,
-  `move_message`/`archive_message`/`trash_message`, `mark_read`, `flag_message`.
+  `move_message`/`archive_message`/`trash_message`, `mark_read`, `flag_message`,
+  `list_attachments`, `download_attachment` (contentBytes inline ou fallback `/$value`).
 - `services/calendar.py` : `CalendarService`. `list_events` (calendarView + Prefer tz),
   `create_event`, `update_event`, `delete_event`.
 - `skill_cmd.py` : commandes `skill` / `skill learn`. `skill.md` embarqué + concaténation

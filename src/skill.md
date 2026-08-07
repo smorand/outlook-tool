@@ -48,7 +48,9 @@ outlook-tool
 │   ├── archive <id>                  # Archiver (déplacer vers Archive)
 │   ├── move <id> <destination>       # Déplacer vers un dossier
 │   ├── trash <id>                    # Mettre à la corbeille
-│   └── flag <id> [--unflag]          # Marquer / démarquer avec un flag (suivi)
+│   ├── flag <id> [--unflag]          # Marquer / démarquer avec un flag (suivi)
+│   ├── attachments <id> [--json]     # Lister les pièces jointes (nom, taille, id)
+│   └── download <id> [--out DIR] [--name TEXTE] [--include-inline]  # Télécharger les PJ
 └── cal
     ├── list --start ISO --end ISO [--tz TZ] [--json]
     ├── add --subject ... --start ISO --end ISO [--tz TZ] [--location ...] [--body ...] [--attendee ...]
@@ -102,6 +104,28 @@ outlook-tool send --to "bob@corp.com" --subject "Rapport" --body "<h1>...</h1>" 
 outlook-tool send --to "alice@corp.com" --subject "Rapport" --body "Voir PJ" \
   --attach rapport.pdf
 ```
+
+## Workflow type : pièces jointes
+
+Ne JAMAIS lire le token en clair ni bricoler du curl/base64. Utilise ces commandes.
+
+```bash
+# Lister les PJ d'un message (les inline comme image001.jpg sont marquées inline)
+outlook-tool mail attachments <id>
+outlook-tool mail attachments <id> --json     # ids complets pour scripting
+
+# Télécharger toutes les PJ non-inline dans ~/Downloads
+outlook-tool mail download <id> --out ~/Downloads
+
+# Télécharger seulement celles dont le nom contient un texte
+outlook-tool mail download <id> --name "Portefeuille" --out ~/Downloads
+
+# Inclure aussi les images inline
+outlook-tool mail download <id> --include-inline --out ~/Downloads
+```
+
+Sans `--out`, le téléchargement va dans le dossier courant. Les gros fichiers (contentBytes
+absent) sont récupérés via l'endpoint `/$value` automatiquement.
 
 ## Workflow type : calendrier
 
