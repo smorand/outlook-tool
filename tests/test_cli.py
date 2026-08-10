@@ -85,6 +85,72 @@ def test_draft_requires_body(cli_env: Path) -> None:
     assert result.exit_code == 2
 
 
+def test_draft_requires_to_or_reply_to(cli_env: Path) -> None:
+    """draft without --to and without --reply-to exits with code 2."""
+    result = runner.invoke(app, ["draft", "--subject", "s", "--body", "b"])
+    assert result.exit_code == 2
+
+
+def test_draft_reply_all_requires_reply_to(cli_env: Path) -> None:
+    """--reply-all without --reply-to exits with code 2."""
+    result = runner.invoke(app, ["draft", "--reply-all", "--to", "a@b.com", "--subject", "s", "--body", "b"])
+    assert result.exit_code == 2
+
+
+@respx.mock
+def test_draft_reply_to_command(cli_env: Path) -> None:
+    """draft --reply-to creates a threaded reply via createReply, prepending the body."""
+    reply_route = respx.post(f"{GRAPH}/me/messages/ORIG1/createReply").mock(
+        return_value=httpx.Response(
+            201,
+            json={
+                "id": "REPLYX",
+                "subject": "RE: Hello",
+                "conversationId": "CONVX",
+                "body": {"contentType": "HTML", "content": "<html><body>quoted original</body></html>"},
+            },
+        )
+    )
+    patch_route = respx.patch(f"{GRAPH}/me/messages/REPLYX").mock(return_value=httpx.Response(200, json={}))
+    result = runner.invoke(app, ["draft", "--reply-to", "ORIG1", "--body", "My reply text"])
+    assert result.exit_code == 0, result.stdout
+    assert reply_route.called
+    assert patch_route.called
+    sent = json.loads(patch_route.calls.last.request.content)
+    assert "My reply text" in sent["body"]["content"]
+    assert "quoted original" in sent["body"]["content"]
+    assert "Draft saved" in result.stdout
+
+
+@respx.mock
+def test_draft_reply_all_command(cli_env: Path) -> None:
+    """draft --reply-to --reply-all calls createReplyAll."""
+    reply_all_route = respx.post(f"{GRAPH}/me/messages/ORIG1/createReplyAll").mock(
+        return_value=httpx.Response(
+            201, json={"id": "REPLYY", "body": {"contentType": "HTML", "content": "<body></body>"}}
+        )
+    )
+    result = runner.invoke(app, ["draft", "--reply-to", "ORIG1", "--reply-all"])
+    assert result.exit_code == 0, result.stdout
+    assert reply_all_route.called
+
+
+@respx.mock
+def test_draft_reply_to_overrides_to(cli_env: Path) -> None:
+    """draft --reply-to --to overrides the recipients Graph auto-populated."""
+    respx.post(f"{GRAPH}/me/messages/ORIG1/createReply").mock(
+        return_value=httpx.Response(
+            201, json={"id": "REPLYZ", "body": {"contentType": "HTML", "content": "<body></body>"}}
+        )
+    )
+    patch_route = respx.patch(f"{GRAPH}/me/messages/REPLYZ").mock(return_value=httpx.Response(200, json={}))
+    result = runner.invoke(app, ["draft", "--reply-to", "ORIG1", "--to", "override@corp.com", "--cc", "cc@corp.com"])
+    assert result.exit_code == 0, result.stdout
+    sent = json.loads(patch_route.calls.last.request.content)
+    assert sent["toRecipients"][0]["emailAddress"]["address"] == "override@corp.com"
+    assert sent["ccRecipients"][0]["emailAddress"]["address"] == "cc@corp.com"
+
+
 def test_login_required_without_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A command with no cached token exits with the login-required code."""
     monkeypatch.chdir(tmp_path)

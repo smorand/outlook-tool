@@ -153,34 +153,83 @@ def send(
 @app.command()
 def draft(
     ctx: typer.Context,
-    to: Annotated[list[str], typer.Option("--to", help="Recipient (repeatable). 'Name <a@b>' or 'a@b'")],
-    subject: Annotated[str, typer.Option("--subject", "-s", help="Subject")],
+    to: Annotated[
+        list[str] | None,
+        typer.Option("--to", help="Recipient (repeatable). 'Name <a@b>' or 'a@b'. Required unless --reply-to."),
+    ] = None,
+    subject: Annotated[str | None, typer.Option("--subject", "-s", help="Subject. Required unless --reply-to.")] = None,
     body: Annotated[str | None, typer.Option("--body", "-b", help="Body content")] = None,
     body_file: Annotated[Path | None, typer.Option("--body-file", help="Read body from file")] = None,
     cc: Annotated[list[str] | None, typer.Option("--cc", help="Cc recipient (repeatable)")] = None,
     bcc: Annotated[list[str] | None, typer.Option("--bcc", help="Bcc recipient (repeatable)")] = None,
     attach: Annotated[list[Path] | None, typer.Option("--attach", "-a", help="Attachment path (repeatable)")] = None,
-    html: Annotated[bool, typer.Option("--html/--text", help="Body is HTML (default) or plain text")] = True,
+    html: Annotated[
+        bool,
+        typer.Option(
+            "--html/--text", help="Body is HTML (default) or plain text; ignored with --reply-to (Graph decides)"
+        ),
+    ] = True,
+    reply_to: Annotated[
+        str | None,
+        typer.Option(
+            "--reply-to", help="Message id to reply to: threaded reply via Graph createReply, not a new message"
+        ),
+    ] = None,
+    reply_all: Annotated[
+        bool, typer.Option("--reply-all", help="Reply to all recipients (only valid with --reply-to)")
+    ] = False,
 ) -> None:
-    """Save a draft in Outlook (does not send — opens ready to review)."""
+    """Save a draft in Outlook (does not send — opens ready to review).
+
+    Without --reply-to: creates a standalone message (--to and --subject required).
+    With --reply-to: creates a real threaded reply via Graph createReply/createReplyAll
+    (correct conversationId, "RE: " subject, quoted original). --to/--subject/--body
+    become optional overrides on top of what Graph auto-populates; any --body given is
+    prepended above the quote, never replacing it.
+    """
     settings: Settings = ctx.obj
-    if body is None and body_file is None:
-        console.print("[red]provide --body or --body-file[/red]")
+    if reply_all and reply_to is None:
+        console.print("[red]--reply-all requires --reply-to[/red]")
         raise typer.Exit(code=2)
-    content = body if body is not None else body_file.read_text(encoding="utf-8")  # type: ignore[union-attr]
-    message = OutgoingMessage(
-        subject=subject,
-        body=content,
-        is_html=html,
-        to=[Recipient.parse(r) for r in to],
-        cc=[Recipient.parse(r) for r in (cc or [])],
-        bcc=[Recipient.parse(r) for r in (bcc or [])],
-        attachments=[Attachment.from_path(p) for p in (attach or [])],
-    )
+    if reply_to is None:
+        if not to:
+            console.print("[red]provide --to or --reply-to[/red]")
+            raise typer.Exit(code=2)
+        if subject is None:
+            console.print("[red]provide --subject[/red]")
+            raise typer.Exit(code=2)
+        if body is None and body_file is None:
+            console.print("[red]provide --body or --body-file[/red]")
+            raise typer.Exit(code=2)
+    content: str | None = body
+    if content is None and body_file is not None:
+        content = body_file.read_text(encoding="utf-8")
 
     async def _do(_auth: Authenticator, mail: MailService, _cal: CalendarService) -> None:
-        saved = await mail.create_draft(message)
-        console.print(f"[green]Draft saved[/green] '{subject}' id={saved.get('id', '')[:16]}")
+        if reply_to is not None:
+            saved = await mail.create_reply_draft(
+                reply_to,
+                reply_all=reply_all,
+                body=content,
+                subject=subject,
+                to=[Recipient.parse(r) for r in to] if to else None,
+                cc=[Recipient.parse(r) for r in cc] if cc else None,
+                bcc=[Recipient.parse(r) for r in bcc] if bcc else None,
+                attachments=[Attachment.from_path(p) for p in (attach or [])],
+            )
+        else:
+            # to/subject/content are validated non-None above when reply_to is None.
+            message = OutgoingMessage(
+                subject=subject,  # type: ignore[arg-type]
+                body=content,  # type: ignore[arg-type]
+                is_html=html,
+                to=[Recipient.parse(r) for r in to],  # type: ignore[union-attr]
+                cc=[Recipient.parse(r) for r in (cc or [])],
+                bcc=[Recipient.parse(r) for r in (bcc or [])],
+                attachments=[Attachment.from_path(p) for p in (attach or [])],
+            )
+            saved = await mail.create_draft(message)
+        console.print(f"[green]Draft saved[/green] id={saved.get('id', '')[:16]}")
 
     _run(settings, _do)
 

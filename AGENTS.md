@@ -33,9 +33,13 @@ make install   # installe la commande 'outlook-tool' (uv tool)
 - `models.py` : value models pydantic (`Recipient`, `Attachment`, `OutgoingMessage`,
   `MailSummary`, `AttachmentSummary`, `CalendarEventInput`, `CalendarEventSummary`) + sérialisation Graph.
 - `services/mail.py` : `MailService`. Envoi inline (<= seuil) ou draft + upload session
-  (> seuil). `list_messages` (option `unread_only`), `search_messages` ($search), `get_message`,
-  `move_message`/`archive_message`/`trash_message`, `mark_read`, `flag_message`,
-  `list_attachments`, `download_attachment` (contentBytes inline ou fallback `/$value`).
+  (> seuil). `create_draft` (message autonome). `create_reply_draft` (vraie réponse
+  threadée via Graph `createReply`/`createReplyAll` : conversationId correct, sujet
+  "RE: " auto, citation de l'original ; un corps custom est **prepend** au-dessus de la
+  citation, jamais un remplacement, via PATCH). `list_messages` (option `unread_only`),
+  `search_messages` ($search), `get_message`, `move_message`/`archive_message`/`trash_message`,
+  `mark_read`, `flag_message`, `list_attachments`, `download_attachment` (contentBytes
+  inline ou fallback `/$value`).
 - `services/calendar.py` : `CalendarService`. `list_events` (calendarView + Prefer tz),
   `create_event`, `update_event`, `delete_event`.
 - `skill_cmd.py` : commandes `skill` / `skill learn`. `skill.md` embarqué + concaténation
@@ -68,7 +72,7 @@ Couverture actuelle ~94%.
 
 - `.agent_docs/auth-client-id.md` : risque de dépendance au client ID public Microsoft,
   détection d'un blocage tenant (codes AADSTS) et fallbacks.
-- `.agent_docs/e2e-testing.md` : protocole de vérification e2e (mail + calendrier) via
-  `seb.morand@gmail.com` et email-manager.
+- `.agent_docs/e2e-testing.md` : protocole de vérification e2e (mail + calendrier +
+  `draft --reply-to`) via `seb.morand@gmail.com` et email-manager.
 - `.agent_docs/python.md` : standards de code Python.
 - `.agent_docs/makefile.md` : documentation du Makefile.

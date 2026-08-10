@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import logging
+import re
 from html.parser import HTMLParser
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlencode
@@ -14,6 +15,7 @@ from tracing import trace_span
 if TYPE_CHECKING:
     from config import Settings
     from graph_client import GraphClient
+    from models import Recipient
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +24,8 @@ _READ_SELECT = "id,subject,from,toRecipients,ccRecipients,receivedDateTime,body,
 # Note: startDateTime/endDateTime are NOT valid $select fields on /me/messages;
 # they are returned automatically by Graph when casting to eventMessage.
 _READ_SELECT_MEETING = _READ_SELECT
+
+_BODY_TAG_RE = re.compile(r"<body[^>]*>", re.IGNORECASE)
 
 
 class _TextExtractor(HTMLParser):
@@ -57,6 +61,27 @@ def _html_to_text(content: str) -> str:
     parser = _TextExtractor()
     parser.feed(content)
     return parser.get_text()
+
+
+def _prepend_reply_body(existing_content: str, addition: str, *, is_html: bool) -> str:
+    """Insert caller text above the citation Graph already put in a reply draft.
+
+    createReply/createReplyAll pre-fill body.content with a citation of the
+    original message (quoted headers + body). Replacing body.content outright
+    would delete that citation, turning the reply into a message that merely
+    looks like a new one, which defeats the point of using createReply instead
+    of a plain POST /me/messages. Mirroring what a human does when clicking
+    Reply in Outlook and typing above the quoted thread, the addition is
+    inserted right after the opening <body> tag (HTML) or as a leading block
+    (plain text), leaving the citation intact below it.
+    """
+    if not is_html:
+        return f"{addition}\n\n{existing_content}"
+    match = _BODY_TAG_RE.search(existing_content)
+    if match is None:
+        return f"{addition}{existing_content}"
+    insert_at = match.end()
+    return f"{existing_content[:insert_at]}{addition}{existing_content[insert_at:]}"
 
 
 class MailService:
@@ -144,6 +169,63 @@ class MailService:
             for attachment in message.attachments:
                 await self._add_attachment(message_id, attachment)
             logger.info("saved draft '%s' id=%s", message.subject, message_id)
+            return draft
+
+    async def create_reply_draft(
+        self,
+        message_id: str,
+        *,
+        reply_all: bool = False,
+        body: str | None = None,
+        subject: str | None = None,
+        to: list[Recipient] | None = None,
+        cc: list[Recipient] | None = None,
+        bcc: list[Recipient] | None = None,
+        attachments: list[Attachment] | None = None,
+    ) -> dict[str, Any]:
+        """Create a real threaded reply draft via Graph createReply/createReplyAll.
+
+        Unlike create_draft (POST /me/messages, a standalone message), this calls
+        createReply/createReplyAll so Graph itself builds the draft with the
+        correct conversationId, a "RE: "-prefixed subject, the sender (or all
+        recipients for reply-all) auto-populated, and body.content already
+        containing a citation of the original message. That citation is exactly
+        what makes the draft appear nested under the original thread in Outlook;
+        losing it would make the reply indistinguishable from `create_draft`.
+
+        A caller-provided body is therefore never used to replace body.content:
+        it is PREPENDED above the existing citation (see _prepend_reply_body),
+        matching what a human does when clicking Reply and typing above the
+        quoted thread. subject/to/cc/bcc overrides and any body change are all
+        applied via a single follow-up PATCH once the reply draft exists.
+        """
+        action = "createReplyAll" if reply_all else "createReply"
+        with trace_span("mail.create_reply_draft", attributes={"mail.reply_all": reply_all}):
+            draft: dict[str, Any] = (await self._graph.post(f"/me/messages/{message_id}/{action}")).json()
+            draft_id = str(draft["id"])
+            changes: dict[str, Any] = {}
+            if subject is not None:
+                changes["subject"] = subject
+            if to is not None:
+                changes["toRecipients"] = [r.to_graph() for r in to]
+            if cc is not None:
+                changes["ccRecipients"] = [r.to_graph() for r in cc]
+            if bcc is not None:
+                changes["bccRecipients"] = [r.to_graph() for r in bcc]
+            if body is not None:
+                existing_body = draft.get("body") or {}
+                existing_content = str(existing_body.get("content", "")) if isinstance(existing_body, dict) else ""
+                existing_type = (
+                    str(existing_body.get("contentType", "HTML")) if isinstance(existing_body, dict) else "HTML"
+                )
+                is_html = existing_type.lower() == "html"
+                merged = _prepend_reply_body(existing_content, body, is_html=is_html)
+                changes["body"] = {"contentType": existing_type, "content": merged}
+            if changes:
+                draft = (await self._graph.patch(f"/me/messages/{draft_id}", json=changes)).json()
+            for attachment in attachments or []:
+                await self._add_attachment(draft_id, attachment)
+            logger.info("saved reply draft id=%s reply_all=%s", draft_id, reply_all)
             return draft
 
     async def search_messages(self, query: str, *, top: int = 10) -> list[MailSummary]:

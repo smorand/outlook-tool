@@ -38,6 +38,7 @@ outlook-tool
 ├── login                             # Authentification device-code interactive
 ├── version                           # Version du binaire
 ├── send                              # Envoyer un email
+├── draft                             # Sauvegarder un brouillon (--reply-to pour une réponse threadée)
 ├── mail
 │   ├── list [--top N] [--folder F] [--unread] [--json]
 │   ├── get <id> [--json]             # Lire un message complet
@@ -241,6 +242,33 @@ outlook-tool draft \
 ```
 
 Préférer `draft` quand l'utilisateur veut relire avant envoi.
+
+## Workflow type : répondre à un mail (vraie réponse threadée)
+
+`draft --reply-to <id>` crée une **vraie réponse** via Graph (`createReply` /
+`createReplyAll`), pas un nouveau message qui ressemble à une réponse : le brouillon
+généré a le bon `conversationId`, un sujet "RE: ..." automatique, et cite déjà le
+message d'origine. Il apparaît nesté sous le mail d'origine dans Outlook.
+
+```bash
+# Réponse simple à l'expéditeur, avec un texte au-dessus de la citation
+outlook-tool draft --reply-to <message_id> --body "<p>Merci, je regarde ça.</p>"
+
+# Répondre à tous (expéditeur + tous les destinataires du mail d'origine)
+outlook-tool draft --reply-to <message_id> --reply-all --body "<p>Pour info...</p>"
+
+# Réponse sans texte custom : juste la citation auto-générée par Graph, à compléter dans Outlook
+outlook-tool draft --reply-to <message_id>
+
+# Override des destinataires/sujet auto-remplis par Graph (rare)
+outlook-tool draft --reply-to <message_id> --to "autre@corp.com" --subject "Sujet custom"
+```
+
+**IMPORTANT** : `--body` est **ajouté au-dessus** de la citation déjà générée par
+Graph, jamais un remplacement — sinon la réponse perd tout son lien avec le fil de
+discussion. Avec `--reply-to`, `--to` et `--subject` deviennent optionnels (Graph les
+remplit automatiquement) ; sans `--reply-to`, ils restent obligatoires comme pour un
+`draft`/`send` classique. `--reply-all` n'a de sens qu'avec `--reply-to`.
 
 **IMPÉRATIF** : tout email envoyé via `outlook-tool send` doit être soigné visuellement.
 L'outil envoie en HTML par défaut — en tirer parti systématiquement.

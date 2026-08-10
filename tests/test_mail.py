@@ -128,6 +128,169 @@ async def test_create_draft_with_attachment(settings: Settings, stub_auth: StubA
 
 
 @respx.mock
+async def test_create_reply_draft_simple(settings: Settings, stub_auth: StubAuth) -> None:
+    """With no body override, createReply is called and no PATCH follows."""
+    reply_route = respx.post(f"{GRAPH}/me/messages/ORIG1/createReply").mock(
+        return_value=httpx.Response(
+            201,
+            json={
+                "id": "REPLY1",
+                "subject": "RE: Hello",
+                "conversationId": "CONV1",
+                "body": {"contentType": "HTML", "content": "<html><body>quoted original</body></html>"},
+            },
+        )
+    )
+    patch_route = respx.patch(f"{GRAPH}/me/messages/REPLY1").mock(return_value=httpx.Response(200, json={}))
+    async with httpx.AsyncClient() as client:
+        service = MailService(settings, GraphClient(settings, stub_auth, client))
+        result = await service.create_reply_draft("ORIG1")
+    assert reply_route.called
+    assert not patch_route.called
+    assert result["id"] == "REPLY1"
+    assert result["conversationId"] == "CONV1"
+
+
+@respx.mock
+async def test_create_reply_draft_reply_all_uses_createreplyall(settings: Settings, stub_auth: StubAuth) -> None:
+    """reply_all=True calls createReplyAll instead of createReply."""
+    reply_route = respx.post(f"{GRAPH}/me/messages/ORIG1/createReply").mock(return_value=httpx.Response(500))
+    reply_all_route = respx.post(f"{GRAPH}/me/messages/ORIG1/createReplyAll").mock(
+        return_value=httpx.Response(
+            201,
+            json={"id": "REPLY2", "subject": "RE: Hello", "body": {"contentType": "HTML", "content": "<body></body>"}},
+        )
+    )
+    async with httpx.AsyncClient() as client:
+        service = MailService(settings, GraphClient(settings, stub_auth, client))
+        result = await service.create_reply_draft("ORIG1", reply_all=True)
+    assert reply_all_route.called
+    assert not reply_route.called
+    assert result["id"] == "REPLY2"
+
+
+@respx.mock
+async def test_create_reply_draft_custom_body_prepends_not_replaces(settings: Settings, stub_auth: StubAuth) -> None:
+    """A custom body is inserted above Graph's citation, which must remain intact."""
+    respx.post(f"{GRAPH}/me/messages/ORIG1/createReply").mock(
+        return_value=httpx.Response(
+            201,
+            json={
+                "id": "REPLY3",
+                "body": {
+                    "contentType": "HTML",
+                    "content": '<html><body id="x"><div>On Mon, Alice wrote: original quoted text</div></body></html>',
+                },
+            },
+        )
+    )
+    patch_route = respx.patch(f"{GRAPH}/me/messages/REPLY3").mock(
+        return_value=httpx.Response(200, json={"id": "REPLY3"})
+    )
+    async with httpx.AsyncClient() as client:
+        service = MailService(settings, GraphClient(settings, stub_auth, client))
+        await service.create_reply_draft("ORIG1", body="<p>My custom reply text</p>")
+    assert patch_route.called
+    sent = json.loads(patch_route.calls.last.request.content)
+    content = sent["body"]["content"]
+    assert sent["body"]["contentType"] == "HTML"
+    assert "My custom reply text" in content
+    assert "original quoted text" in content
+    # prepended above the quote, not replacing it: custom text comes first
+    assert content.index("My custom reply text") < content.index("original quoted text")
+    # the <body ...> tag itself is preserved (custom text inserted after it, not before)
+    assert content.startswith('<html><body id="x">')
+
+
+@respx.mock
+async def test_create_reply_draft_custom_body_plain_text(settings: Settings, stub_auth: StubAuth) -> None:
+    """A plain-text existing draft body gets the addition prepended with a blank line."""
+    respx.post(f"{GRAPH}/me/messages/ORIG1/createReply").mock(
+        return_value=httpx.Response(
+            201, json={"id": "REPLY4", "body": {"contentType": "Text", "content": "original quoted text"}}
+        )
+    )
+    patch_route = respx.patch(f"{GRAPH}/me/messages/REPLY4").mock(return_value=httpx.Response(200, json={}))
+    async with httpx.AsyncClient() as client:
+        service = MailService(settings, GraphClient(settings, stub_auth, client))
+        await service.create_reply_draft("ORIG1", body="My custom reply")
+    sent = json.loads(patch_route.calls.last.request.content)
+    assert sent["body"]["contentType"] == "Text"
+    assert sent["body"]["content"] == "My custom reply\n\noriginal quoted text"
+
+
+@respx.mock
+async def test_create_reply_draft_overrides_recipients_and_subject(settings: Settings, stub_auth: StubAuth) -> None:
+    """Explicit --to/--cc/--subject override what Graph auto-populated."""
+    respx.post(f"{GRAPH}/me/messages/ORIG1/createReply").mock(
+        return_value=httpx.Response(
+            201, json={"id": "REPLY5", "body": {"contentType": "HTML", "content": "<body>q</body>"}}
+        )
+    )
+    patch_route = respx.patch(f"{GRAPH}/me/messages/REPLY5").mock(return_value=httpx.Response(200, json={}))
+    async with httpx.AsyncClient() as client:
+        service = MailService(settings, GraphClient(settings, stub_auth, client))
+        await service.create_reply_draft(
+            "ORIG1",
+            subject="Custom subject",
+            to=[Recipient(email="alice@corp.com")],
+            cc=[Recipient(email="bob@corp.com")],
+        )
+    sent = json.loads(patch_route.calls.last.request.content)
+    assert sent["subject"] == "Custom subject"
+    assert sent["toRecipients"][0]["emailAddress"]["address"] == "alice@corp.com"
+    assert sent["ccRecipients"][0]["emailAddress"]["address"] == "bob@corp.com"
+    assert "body" not in sent
+
+
+@respx.mock
+async def test_create_reply_draft_custom_body_no_body_tag_fallback(settings: Settings, stub_auth: StubAuth) -> None:
+    """When Graph's content has no <body> tag, the addition is simply prepended."""
+    respx.post(f"{GRAPH}/me/messages/ORIG1/createReply").mock(
+        return_value=httpx.Response(
+            201, json={"id": "REPLY7", "body": {"contentType": "HTML", "content": "<div>quoted only</div>"}}
+        )
+    )
+    patch_route = respx.patch(f"{GRAPH}/me/messages/REPLY7").mock(return_value=httpx.Response(200, json={}))
+    async with httpx.AsyncClient() as client:
+        service = MailService(settings, GraphClient(settings, stub_auth, client))
+        await service.create_reply_draft("ORIG1", body="<p>addition</p>")
+    sent = json.loads(patch_route.calls.last.request.content)
+    assert sent["body"]["content"] == "<p>addition</p><div>quoted only</div>"
+
+
+@respx.mock
+async def test_create_reply_draft_overrides_bcc(settings: Settings, stub_auth: StubAuth) -> None:
+    """Explicit --bcc overrides recipients too."""
+    respx.post(f"{GRAPH}/me/messages/ORIG1/createReply").mock(
+        return_value=httpx.Response(
+            201, json={"id": "REPLY8", "body": {"contentType": "HTML", "content": "<body>q</body>"}}
+        )
+    )
+    patch_route = respx.patch(f"{GRAPH}/me/messages/REPLY8").mock(return_value=httpx.Response(200, json={}))
+    async with httpx.AsyncClient() as client:
+        service = MailService(settings, GraphClient(settings, stub_auth, client))
+        await service.create_reply_draft("ORIG1", bcc=[Recipient(email="secret@corp.com")])
+    sent = json.loads(patch_route.calls.last.request.content)
+    assert sent["bccRecipients"][0]["emailAddress"]["address"] == "secret@corp.com"
+
+
+@respx.mock
+async def test_create_reply_draft_with_attachment(settings: Settings, stub_auth: StubAuth, tmp_path: Path) -> None:
+    """Attachments are uploaded on the reply draft the same way as create_draft."""
+    small = tmp_path / "note.txt"
+    small.write_bytes(b"hi")
+    respx.post(f"{GRAPH}/me/messages/ORIG1/createReply").mock(
+        return_value=httpx.Response(201, json={"id": "REPLY6", "body": {"contentType": "HTML", "content": "<body/>"}})
+    )
+    attach_route = respx.post(f"{GRAPH}/me/messages/REPLY6/attachments").mock(return_value=httpx.Response(201, json={}))
+    async with httpx.AsyncClient() as client:
+        service = MailService(settings, GraphClient(settings, stub_auth, client))
+        await service.create_reply_draft("ORIG1", attachments=[Attachment.from_path(small)])
+    assert attach_route.called
+
+
+@respx.mock
 async def test_search_messages(settings: Settings, stub_auth: StubAuth) -> None:
     """search_messages issues a $search query and parses summaries."""
     route = respx.get(url__regex=r".*/me/messages\?.*").mock(
