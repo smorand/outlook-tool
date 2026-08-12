@@ -39,6 +39,8 @@ outlook-tool
 ├── version                           # Version du binaire
 ├── send                              # Envoyer un email
 ├── draft                             # Sauvegarder un brouillon (--reply-to pour une réponse threadée)
+├── draft-update <id>                 # Modifier un brouillon : corps (remplacement), PJ (--add-attach/--remove-attach)
+├── draft-send <id>                   # Envoyer un brouillon déjà créé/validé
 ├── mail
 │   ├── list [--top N] [--folder F] [--unread] [--json]
 │   ├── get <id> [--json]             # Lire un message complet
@@ -127,6 +129,27 @@ outlook-tool mail download <id> --include-inline --out ~/Downloads
 
 Sans `--out`, le téléchargement va dans le dossier courant. Les gros fichiers (contentBytes
 absent) sont récupérés via l'endpoint `/$value` automatiquement.
+
+## Impératif : toujours vérifier la date du jour avant une opération temporelle
+
+**Avant tout `cal list`/`cal add`/`cal update` avec une date relative** ("aujourd'hui",
+"demain", "cette semaine", "lundi prochain", "dans 2h"...), **et avant tout `mail
+list`/`mail search`/`mail get` filtré sur une période relative** ("hier", "cette
+semaine", "le mois dernier"...) : lancer la commande shell `date` pour connaître la
+date et l'heure exactes du jour, puis calculer les bornes ISO 8601 à partir de cette
+date réelle.
+
+Ne jamais déduire ou supposer la date actuelle à partir de la mémoire d'entraînement
+ou d'une date vue plus tôt dans la conversation : elle peut être fausse ou périmée, et
+une erreur ici crée un événement au mauvais jour ou rate les mails de la bonne période
+sans qu'aucune erreur ne soit remontée par l'outil (Graph répond normalement sur une
+plage de dates incorrecte, avec une liste vide ou décalée).
+
+```bash
+date                                   # ex: Wed Aug 12 21:46:46 CEST 2026
+# -> "aujourd'hui" = 2026-08-12, "demain" = 2026-08-13, "cette semaine" = lundi 2026-08-10
+#    à dimanche 2026-08-16, "hier" = 2026-08-11, etc.
+```
 
 ## Workflow type : calendrier
 
@@ -243,6 +266,35 @@ outlook-tool draft \
 
 Préférer `draft` quand l'utilisateur veut relire avant envoi.
 
+## Workflow type : modifier puis envoyer un draft
+
+```bash
+# 1. Créer le brouillon
+outlook-tool draft --to "alice@corp.com" --subject "Rapport" --body "<p>...</p>"
+# -> id du draft retourné (ex: AAMkAG...)
+
+# 2. Lister les PJ actuelles si besoin de savoir quoi retirer
+outlook-tool mail attachments <draft_id>              # donne les attachment id pour --remove-attach
+
+# 3. Ajouter/retirer des pièces jointes (les deux options sont cumulables en un appel)
+outlook-tool draft-update <draft_id> --add-attach rapport-v2.pdf --remove-attach <old_att_id>
+
+# 4. Corriger le corps (remplacement complet, pas un ajout)
+outlook-tool draft-update <draft_id> --body "<p>Corps corrigé.</p>"
+
+# 5. Envoyer une fois relu et validé par l'utilisateur
+outlook-tool draft-send <draft_id>
+```
+
+`draft-update` exige au moins une action (`--body`/`--body-file`, `--add-attach` ou
+`--remove-attach`), sinon il échoue avec exit code 2. `--remove-attach` prend l'**id
+d'attachment** Graph (visible via `mail attachments <id>`), pas l'id du message. Il ne
+touche jamais au sujet ni aux destinataires — utiliser `draft` (nouveau brouillon) ou
+`draft --reply-to` pour ça.
+
+**IMPÉRATIF** : `draft-send` envoie un email au nom de l'utilisateur — confirmation
+obligatoire avant l'appel (voir section finale).
+
 ## Workflow type : répondre à un mail (vraie réponse threadée)
 
 `draft --reply-to <id>` crée une **vraie réponse** via Graph (`createReply` /
@@ -270,15 +322,18 @@ discussion. Avec `--reply-to`, `--to` et `--subject` deviennent optionnels (Grap
 remplit automatiquement) ; sans `--reply-to`, ils restent obligatoires comme pour un
 `draft`/`send` classique. `--reply-all` n'a de sens qu'avec `--reply-to`.
 
-**IMPÉRATIF** : tout email envoyé via `outlook-tool send` doit être soigné visuellement.
-L'outil envoie en HTML par défaut — en tirer parti systématiquement.
+**IMPÉRATIF — HTML obligatoire** : tout email pro (`send`, `draft`, `draft-update`)
+doit être écrit en HTML, **jamais `--text`**. Outlook casse la présentation d'un corps
+plain-text (pas de mise en forme, citations mal rendues, liens non cliquables). L'outil
+envoie en HTML par défaut ; ne jamais passer `--text` sur un email destiné à être lu
+dans Outlook.
 
 Règles à respecter :
 - Utiliser des paragraphes `<p>` séparés, jamais un bloc de texte continu
 - Structurer avec `<ol>` / `<ul>` quand il y a une liste de points
 - Mettre en gras `<strong>` les éléments importants
 - Les liens doivent être cliquables avec texte descriptif : `<a href="...">Nom du fichier</a>`, jamais une URL brute
-- Terminer par une signature claire (`<p>Cordialement,<br>Sébastien</p>` ou équivalent)
+- Terminer par la signature pro (voir section suivante)
 - Aérer : un `<br>` entre la salutation et le corps, un `<br>` avant la signature
 
 Exemple de structure minimale :
@@ -294,14 +349,36 @@ Exemple de structure minimale :
 
 <p>Lien : <a href="https://...">Nom du document</a></p>
 
-<p>Cordialement,<br>Sébastien</p>
+<p>--<br>
+Associate Partner Chief Architect IBM - Strategic AI Partners<br>
+IBM France - Consulting<br>
+17, avenue de l'Europe, 92275 Bois-Colombes Cedex<br>
+Tél : +33 6 12 03 41 15</p>
 ```
+
+## Signature pro obligatoire
+
+Tout email envoyé ou mis en brouillon pour l'utilisateur (`send`, `draft`,
+`draft-update`) doit se terminer par cette signature HTML, ajoutée par l'agent dans le
+corps **avant** l'appel à la commande (l'outil ne l'insère jamais automatiquement) :
+
+```html
+<p>--<br>
+Associate Partner Chief Architect IBM - Strategic AI Partners<br>
+IBM France - Consulting<br>
+17, avenue de l'Europe, 92275 Bois-Colombes Cedex<br>
+Tél : +33 6 12 03 41 15</p>
+```
+
+Ne pas la dupliquer si le corps existant en contient déjà une (cas d'une citation de
+reply qui inclurait déjà la signature du message précédent, ou d'un `draft-update` sur
+un brouillon qui l'a déjà). Vérifier le corps actuel avant d'ajouter la signature.
 
 ---
 
 ## Confirmation utilisateur OBLIGATOIRE avant action
 
-- Envoi d'un email au nom de l'utilisateur
+- Envoi d'un email au nom de l'utilisateur (`send`, ou `draft-send` sur un brouillon)
 - Suppression vers la corbeille (`trash`)
 - Marquage spam / déplacement hors inbox
 - Toute réponse à un email confidentiel ou sensible (RH, juridique, finance)

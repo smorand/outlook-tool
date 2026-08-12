@@ -151,6 +151,50 @@ def test_draft_reply_to_overrides_to(cli_env: Path) -> None:
     assert sent["ccRecipients"][0]["emailAddress"]["address"] == "cc@corp.com"
 
 
+@respx.mock
+def test_draft_update_body_only(cli_env: Path) -> None:
+    """draft-update --body PATCHes the message body and reports success."""
+    route = respx.patch(f"{GRAPH}/me/messages/DRAFTU1").mock(return_value=httpx.Response(200, json={}))
+    result = runner.invoke(app, ["draft-update", "DRAFTU1", "--body", "<p>Corrected</p>"])
+    assert result.exit_code == 0, result.stdout
+    assert route.called
+    sent = json.loads(route.calls.last.request.content)
+    assert sent == {"body": {"contentType": "HTML", "content": "<p>Corrected</p>"}}
+    assert "Draft updated" in result.stdout
+
+
+@respx.mock
+def test_draft_update_add_and_remove_attach(cli_env: Path, tmp_path: Path) -> None:
+    """draft-update combines --add-attach and --remove-attach in one call."""
+    new_file = tmp_path / "v2.pdf"
+    new_file.write_bytes(b"PDF")
+    add_route = respx.post(f"{GRAPH}/me/messages/DRAFTU2/attachments").mock(return_value=httpx.Response(201, json={}))
+    remove_route = respx.delete(f"{GRAPH}/me/messages/DRAFTU2/attachments/ATT1").mock(return_value=httpx.Response(204))
+    result = runner.invoke(
+        app,
+        ["draft-update", "DRAFTU2", "--add-attach", str(new_file), "--remove-attach", "ATT1"],
+    )
+    assert result.exit_code == 0, result.stdout
+    assert add_route.called
+    assert remove_route.called
+
+
+def test_draft_update_requires_an_action(cli_env: Path) -> None:
+    """draft-update without --body/--add-attach/--remove-attach exits with code 2."""
+    result = runner.invoke(app, ["draft-update", "DRAFTU3"])
+    assert result.exit_code == 2
+
+
+@respx.mock
+def test_draft_send_command(cli_env: Path) -> None:
+    """draft-send POSTs to the /send action and reports success."""
+    route = respx.post(f"{GRAPH}/me/messages/DRAFTU4/send").mock(return_value=httpx.Response(202))
+    result = runner.invoke(app, ["draft-send", "DRAFTU4"])
+    assert result.exit_code == 0, result.stdout
+    assert route.called
+    assert "Sent" in result.stdout
+
+
 def test_login_required_without_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A command with no cached token exits with the login-required code."""
     monkeypatch.chdir(tmp_path)

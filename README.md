@@ -54,6 +54,11 @@ outlook-tool mail attachments <message-id>             # lister nom / taille / i
 outlook-tool mail download <message-id> --out ~/Downloads          # télécharger les PJ
 outlook-tool mail download <message-id> --name "rapport" --out .   # filtrer par nom
 
+# Modifier puis envoyer un brouillon
+outlook-tool draft-update <draft-id> --add-attach ./v2.pdf --remove-attach <att-id>
+outlook-tool draft-update <draft-id> --body "<p>Corps corrigé.</p>"
+outlook-tool draft-send <draft-id>
+
 # 4. Calendrier
 outlook-tool cal add --subject "Nuit" \
   --start 2026-07-29T03:00:00 --end 2026-07-29T03:30:00 \

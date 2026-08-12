@@ -20,7 +20,9 @@ make install   # installe la commande 'outlook-tool' (uv tool)
 
 ## Architecture (src/, layout flat)
 
-- `outlook_tool.py` : entry point Typer. Commandes: `login`, `send`, `version`,
+- `outlook_tool.py` : entry point Typer. Commandes: `login`, `send`, `draft`,
+  `draft-update` (corps: remplacement complet; PJ: `--add-attach`/`--remove-attach`),
+  `draft-send` (envoie un brouillon existant), `version`,
   `mail list|get|read|search|archive|move|trash|mark-read|mark-unread|flag|attachments|download`, `cal add|list|update|delete`,
   `skill|skill learn`. Injection de dépendances dans
   `_with_services` (crée httpx client, Authenticator, GraphClient, services).
@@ -36,7 +38,10 @@ make install   # installe la commande 'outlook-tool' (uv tool)
   (> seuil). `create_draft` (message autonome). `create_reply_draft` (vraie réponse
   threadée via Graph `createReply`/`createReplyAll` : conversationId correct, sujet
   "RE: " auto, citation de l'original ; un corps custom est **prepend** au-dessus de la
-  citation, jamais un remplacement, via PATCH). `list_messages` (option `unread_only`),
+  citation, jamais un remplacement, via PATCH). `add_attachments`/`remove_attachment`
+  (ajout/suppression de PJ sur un draft existant), `update_body` (remplacement complet
+  du corps via PATCH, pas un merge), `send_draft` (POST `/send` sur un brouillon existant).
+  `list_messages` (option `unread_only`),
   `search_messages` ($search), `get_message`, `move_message`/`archive_message`/`trash_message`,
   `mark_read`, `flag_message`, `list_attachments`, `download_attachment` (contentBytes
   inline ou fallback `/$value`).

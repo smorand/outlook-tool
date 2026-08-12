@@ -155,6 +155,40 @@ class MailService:
             )
             start = end
 
+    async def add_attachments(self, message_id: str, attachments: list[Attachment]) -> None:
+        """Attach files to an existing message/draft.
+
+        Small files are inlined directly, large ones go through an upload session,
+        mirroring _send_via_draft/create_draft.
+        """
+        with trace_span("mail.add_attachments", attributes={"mail.attachments": len(attachments)}):
+            for attachment in attachments:
+                await self._add_attachment(message_id, attachment)
+            logger.info("added %d attachment(s) to %s", len(attachments), message_id)
+
+    async def remove_attachment(self, message_id: str, attachment_id: str) -> None:
+        """Remove one attachment from a message/draft."""
+        with trace_span("mail.remove_attachment"):
+            await self._graph.delete(f"/me/messages/{message_id}/attachments/{attachment_id}")
+            logger.info("removed attachment %s from %s", attachment_id, message_id)
+
+    async def update_body(self, message_id: str, content: str, *, is_html: bool = True) -> dict[str, Any]:
+        """Replace the body of an existing draft entirely (not a merge/prepend)."""
+        with trace_span("mail.update_body", attributes={"mail.is_html": is_html}):
+            response = await self._graph.patch(
+                f"/me/messages/{message_id}",
+                json={"body": {"contentType": "HTML" if is_html else "Text", "content": content}},
+            )
+            updated: dict[str, Any] = response.json()
+            logger.info("updated body of %s", message_id)
+            return updated
+
+    async def send_draft(self, message_id: str) -> None:
+        """Send an existing draft as-is (no further changes)."""
+        with trace_span("mail.send_draft"):
+            await self._graph.post(f"/me/messages/{message_id}/send")
+            logger.info("sent draft %s", message_id)
+
     async def create_draft(self, message: OutgoingMessage) -> dict[str, Any]:
         """Save a message as a draft (does not send it).
 

@@ -593,3 +593,64 @@ async def test_list_messages_is_meeting_request_field(settings: Settings, stub_a
         messages = await service.list_messages(top=5)
     assert messages[0].is_meeting_request is True
     assert messages[1].is_meeting_request is False
+
+
+@respx.mock
+async def test_add_attachments_uploads_each_file(settings: Settings, stub_auth: StubAuth, tmp_path: Path) -> None:
+    """add_attachments POSTs each file as an attachment on the given message/draft."""
+    file_a = tmp_path / "a.txt"
+    file_a.write_bytes(b"AAA")
+    file_b = tmp_path / "b.txt"
+    file_b.write_bytes(b"BBB")
+    route = respx.post(f"{GRAPH}/me/messages/DRAFT9/attachments").mock(return_value=httpx.Response(201, json={}))
+
+    async with httpx.AsyncClient() as client:
+        service = MailService(settings, GraphClient(settings, stub_auth, client))
+        await service.add_attachments("DRAFT9", [Attachment.from_path(file_a), Attachment.from_path(file_b)])
+
+    assert route.call_count == 2
+    names = {json.loads(call.request.content)["name"] for call in route.calls}
+    assert names == {"a.txt", "b.txt"}
+
+
+@respx.mock
+async def test_remove_attachment_calls_delete(settings: Settings, stub_auth: StubAuth) -> None:
+    """remove_attachment issues a DELETE on the attachment resource."""
+    route = respx.delete(f"{GRAPH}/me/messages/DRAFT9/attachments/ATT1").mock(return_value=httpx.Response(204))
+    async with httpx.AsyncClient() as client:
+        service = MailService(settings, GraphClient(settings, stub_auth, client))
+        await service.remove_attachment("DRAFT9", "ATT1")
+    assert route.called
+
+
+@respx.mock
+async def test_update_body_replaces_content_html(settings: Settings, stub_auth: StubAuth) -> None:
+    """update_body PATCHes body.content, contentType HTML by default."""
+    route = respx.patch(f"{GRAPH}/me/messages/DRAFT9").mock(
+        return_value=httpx.Response(200, json={"id": "DRAFT9", "body": {"contentType": "HTML", "content": "<p>x</p>"}})
+    )
+    async with httpx.AsyncClient() as client:
+        service = MailService(settings, GraphClient(settings, stub_auth, client))
+        result = await service.update_body("DRAFT9", "<p>x</p>")
+    assert json.loads(route.calls.last.request.content) == {"body": {"contentType": "HTML", "content": "<p>x</p>"}}
+    assert result["id"] == "DRAFT9"
+
+
+@respx.mock
+async def test_update_body_replaces_content_text(settings: Settings, stub_auth: StubAuth) -> None:
+    """update_body with is_html=False PATCHes contentType Text."""
+    route = respx.patch(f"{GRAPH}/me/messages/DRAFT9").mock(return_value=httpx.Response(200, json={}))
+    async with httpx.AsyncClient() as client:
+        service = MailService(settings, GraphClient(settings, stub_auth, client))
+        await service.update_body("DRAFT9", "plain text", is_html=False)
+    assert json.loads(route.calls.last.request.content) == {"body": {"contentType": "Text", "content": "plain text"}}
+
+
+@respx.mock
+async def test_send_draft_calls_send_endpoint(settings: Settings, stub_auth: StubAuth) -> None:
+    """send_draft POSTs to the /send action for the given message id."""
+    route = respx.post(f"{GRAPH}/me/messages/DRAFT9/send").mock(return_value=httpx.Response(202))
+    async with httpx.AsyncClient() as client:
+        service = MailService(settings, GraphClient(settings, stub_auth, client))
+        await service.send_draft("DRAFT9")
+    assert route.called

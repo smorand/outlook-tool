@@ -234,6 +234,57 @@ def draft(
     _run(settings, _do)
 
 
+@app.command("draft-update")
+def draft_update(
+    ctx: typer.Context,
+    message_id: Annotated[str, typer.Argument(help="Draft message id (from `mail attachments`/`draft`)")],
+    body: Annotated[str | None, typer.Option("--body", "-b", help="Replace the entire body content")] = None,
+    body_file: Annotated[Path | None, typer.Option("--body-file", help="Read replacement body from file")] = None,
+    html: Annotated[
+        bool, typer.Option("--html/--text", help="Body content type when --body/--body-file is set")
+    ] = True,
+    add_attach: Annotated[list[Path] | None, typer.Option("--add-attach", help="Attach a file (repeatable)")] = None,
+    remove_attach: Annotated[
+        list[str] | None,
+        typer.Option("--remove-attach", help="Attachment id to remove (repeatable, from `mail attachments`)"),
+    ] = None,
+) -> None:
+    """Update an existing draft: replace its body and/or add/remove attachments."""
+    settings: Settings = ctx.obj
+    content: str | None = body
+    if content is None and body_file is not None:
+        content = body_file.read_text(encoding="utf-8")
+    if content is None and not add_attach and not remove_attach:
+        console.print("[red]provide --body/--body-file, --add-attach, or --remove-attach[/red]")
+        raise typer.Exit(code=2)
+
+    async def _do(_auth: Authenticator, mail: MailService, _cal: CalendarService) -> None:
+        if content is not None:
+            await mail.update_body(message_id, content, is_html=html)
+        for attachment_id in remove_attach or []:
+            await mail.remove_attachment(message_id, attachment_id)
+        if add_attach:
+            await mail.add_attachments(message_id, [Attachment.from_path(p) for p in add_attach])
+        console.print(f"[green]Draft updated[/green] id={message_id}")
+
+    _run(settings, _do)
+
+
+@app.command("draft-send")
+def draft_send(
+    ctx: typer.Context,
+    message_id: Annotated[str, typer.Argument(help="Draft message id to send as-is")],
+) -> None:
+    """Send an existing (already reviewed) draft."""
+    settings: Settings = ctx.obj
+
+    async def _do(_auth: Authenticator, mail: MailService, _cal: CalendarService) -> None:
+        await mail.send_draft(message_id)
+        console.print(f"[green]Sent[/green] draft id={message_id}")
+
+    _run(settings, _do)
+
+
 @mail_app.command("list")
 def mail_list(
     ctx: typer.Context,
