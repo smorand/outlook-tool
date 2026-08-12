@@ -412,7 +412,7 @@ def test_mail_download_no_match(cli_env: Path) -> None:
 @respx.mock
 def test_cal_add_and_list_and_update_and_delete(cli_env: Path) -> None:
     """cal add/list/update/delete drive the calendar service end to end."""
-    respx.post(f"{GRAPH}/me/events").mock(return_value=httpx.Response(201, json={"id": "E1"}))
+    add_route = respx.post(f"{GRAPH}/me/events").mock(return_value=httpx.Response(201, json={"id": "E1"}))
     respx.get(url__regex=r".*/me/calendarView.*").mock(
         return_value=httpx.Response(
             200,
@@ -424,12 +424,13 @@ def test_cal_add_and_list_and_update_and_delete(cli_env: Path) -> None:
                         "start": {"dateTime": "2026-07-29T03:00:00.0000000", "timeZone": "Europe/Paris"},
                         "end": {"dateTime": "2026-07-29T03:30:00.0000000", "timeZone": "Europe/Paris"},
                         "organizer": {"emailAddress": {"address": "me@corp.com"}},
+                        "categories": ["Red category"],
                     }
                 ]
             },
         )
     )
-    respx.patch(f"{GRAPH}/me/events/E1").mock(return_value=httpx.Response(200, json={"id": "E1"}))
+    update_route = respx.patch(f"{GRAPH}/me/events/E1").mock(return_value=httpx.Response(200, json={"id": "E1"}))
     respx.delete(f"{GRAPH}/me/events/E1").mock(return_value=httpx.Response(204))
 
     add = runner.invoke(
@@ -445,17 +446,25 @@ def test_cal_add_and_list_and_update_and_delete(cli_env: Path) -> None:
             "2026-07-29T03:30:00",
             "--attendee",
             "seb.morand@gmail.com",
+            "--category",
+            "Red category",
         ],
     )
     assert add.exit_code == 0, add.stdout
     assert "E1" in add.stdout
+    assert json.loads(add_route.calls.last.request.content)["categories"] == ["Red category"]
 
-    listed = runner.invoke(app, ["cal", "list", "--start", "2026-07-29T00:00:00", "--end", "2026-07-30T00:00:00"])
+    listed = runner.invoke(
+        app, ["cal", "list", "--start", "2026-07-29T00:00:00", "--end", "2026-07-30T00:00:00", "--json"]
+    )
     assert listed.exit_code == 0, listed.stdout
-    assert "Nuit" in listed.stdout
+    listed_events = json.loads(listed.stdout)
+    assert listed_events[0]["subject"] == "Nuit"
+    assert listed_events[0]["categories"] == ["Red category"]
 
-    updated = runner.invoke(app, ["cal", "update", "E1", "--subject", "Nuit v2"])
+    updated = runner.invoke(app, ["cal", "update", "E1", "--subject", "Nuit v2", "--category", "Green category"])
     assert updated.exit_code == 0, updated.stdout
+    assert json.loads(update_route.calls.last.request.content)["categories"] == ["Green category"]
 
     deleted = runner.invoke(app, ["cal", "delete", "E1"])
     assert deleted.exit_code == 0, deleted.stdout
@@ -465,6 +474,60 @@ def test_cal_update_requires_change(cli_env: Path) -> None:
     """cal update with no field to change exits with code 2."""
     result = runner.invoke(app, ["cal", "update", "E1"])
     assert result.exit_code == 2
+
+
+@respx.mock
+def test_cal_list_table_renders_categories_column(cli_env: Path) -> None:
+    """cal list (table mode, no --json) renders successfully with a categories column."""
+    respx.get(url__regex=r".*/me/calendarView.*").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "value": [
+                    {
+                        "id": "E1",
+                        "subject": "Nuit",
+                        "start": {"dateTime": "2026-07-29T03:00:00.0000000"},
+                        "end": {"dateTime": "2026-07-29T03:30:00.0000000"},
+                        "categories": ["Red category"],
+                    }
+                ]
+            },
+        )
+    )
+    result = runner.invoke(
+        app,
+        ["cal", "list", "--start", "2026-07-29T00:00:00", "--end", "2026-07-30T00:00:00"],
+        env={"COLUMNS": "200"},
+    )
+    assert result.exit_code == 0, result.stdout
+    assert "categories" in result.stdout
+    assert "Red category" in result.stdout
+
+
+@respx.mock
+def test_cal_update_category_repeatable(cli_env: Path) -> None:
+    """cal update accepts multiple --category to assign several categories at once."""
+    route = respx.patch(f"{GRAPH}/me/events/E1").mock(return_value=httpx.Response(200, json={"id": "E1"}))
+    result = runner.invoke(app, ["cal", "update", "E1", "--category", "Red category", "--category", "Green category"])
+    assert result.exit_code == 0, result.stdout
+    assert json.loads(route.calls.last.request.content)["categories"] == ["Red category", "Green category"]
+
+
+@respx.mock
+def test_cal_update_clear_categories(cli_env: Path) -> None:
+    """cal update --clear-categories sends an empty categories list."""
+    route = respx.patch(f"{GRAPH}/me/events/E1").mock(return_value=httpx.Response(200, json={"id": "E1"}))
+    result = runner.invoke(app, ["cal", "update", "E1", "--clear-categories"])
+    assert result.exit_code == 0, result.stdout
+    assert json.loads(route.calls.last.request.content)["categories"] == []
+
+
+def test_cal_update_category_and_clear_conflict(cli_env: Path) -> None:
+    """cal update rejects --category combined with --clear-categories, without any network call."""
+    result = runner.invoke(app, ["cal", "update", "E1", "--category", "Red category", "--clear-categories"])
+    assert result.exit_code == 2
+    assert "cannot pass both" in result.stdout
 
 
 @respx.mock

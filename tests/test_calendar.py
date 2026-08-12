@@ -9,7 +9,7 @@ import httpx
 import respx
 
 from graph_client import GraphClient
-from models import CalendarEventInput, Recipient
+from models import CalendarEventInput, CalendarEventSummary, Recipient
 from services.calendar import CalendarService
 
 if TYPE_CHECKING:
@@ -113,6 +113,63 @@ async def test_update_event_show_as(settings: Settings, stub_auth: StubAuth) -> 
         await _service(settings, stub_auth, client).update_event("E1", {"showAs": "oof"})
     assert route.called
     assert json.loads(route.calls.last.request.content)["showAs"] == "oof"
+
+
+@respx.mock
+async def test_create_event_with_categories(settings: Settings, stub_auth: StubAuth) -> None:
+    """create_event includes categories in the Graph payload when provided."""
+    route = respx.post(f"{GRAPH}/me/events").mock(return_value=httpx.Response(201, json={"id": "E3"}))
+    event = CalendarEventInput(
+        subject="Anniversaire",
+        start="2026-08-17T00:00:00",
+        end="2026-08-17T23:59:59",
+        categories=["Red category"],
+    )
+    async with httpx.AsyncClient() as client:
+        created = await _service(settings, stub_auth, client).create_event(event)
+    assert created["id"] == "E3"
+    body = json.loads(route.calls.last.request.content)
+    assert body["categories"] == ["Red category"]
+
+
+def test_create_event_without_categories_omits_field() -> None:
+    """to_graph_event omits the categories key when none are set."""
+    event = CalendarEventInput(subject="Nuit", start="2026-07-29T03:00:00", end="2026-07-29T03:30:00")
+    assert "categories" not in event.to_graph_event()
+
+
+def test_calendar_event_summary_from_graph_categories() -> None:
+    """from_graph parses categories, defaulting to an empty list when absent."""
+    with_categories = CalendarEventSummary.from_graph(
+        {
+            "id": "E1",
+            "subject": "Nuit",
+            "start": {"dateTime": "2026-07-29T03:00:00"},
+            "end": {"dateTime": "2026-07-29T03:30:00"},
+            "categories": ["Blue category"],
+        }
+    )
+    assert with_categories.categories == ["Blue category"]
+
+    without_categories = CalendarEventSummary.from_graph(
+        {
+            "id": "E2",
+            "subject": "Nuit",
+            "start": {"dateTime": "2026-07-29T03:00:00"},
+            "end": {"dateTime": "2026-07-29T03:30:00"},
+        }
+    )
+    assert without_categories.categories == []
+
+
+@respx.mock
+async def test_update_event_categories(settings: Settings, stub_auth: StubAuth) -> None:
+    """update_event passes categories as a direct field (not nested)."""
+    route = respx.patch(f"{GRAPH}/me/events/E1").mock(return_value=httpx.Response(200, json={"id": "E1"}))
+    async with httpx.AsyncClient() as client:
+        await _service(settings, stub_auth, client).update_event("E1", {"categories": ["Green category"]})
+    assert route.called
+    assert json.loads(route.calls.last.request.content)["categories"] == ["Green category"]
 
 
 @respx.mock

@@ -66,6 +66,9 @@ outlook-tool cal add --subject "Nuit" \
 outlook-tool cal list --start 2026-07-29T00:00:00 --end 2026-07-30T00:00:00
 outlook-tool cal list --start ... --end ... --json   # ids complets pour update/delete
 outlook-tool cal update <event-id> --subject "Nuit v2"
+outlook-tool cal add --subject "Congés" --start ... --end ... --category "Red category"
+outlook-tool cal update <event-id> --category "Blue category"   # remplace toutes les catégories (couleur Outlook)
+outlook-tool cal update <event-id> --clear-categories            # retire toute catégorie
 outlook-tool cal delete <event-id>
 ```
 

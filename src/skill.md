@@ -161,12 +161,32 @@ outlook-tool cal list --start 2026-07-28T00:00:00 --end 2026-08-04T00:00:00 --js
 outlook-tool cal add --subject "Point équipe" --start 2026-08-04T10:00:00 \
   --end 2026-08-04T11:00:00 --attendee "alice@corp.com"
 
+# Créer un événement avec une catégorie (couleur Outlook)
+outlook-tool cal add --subject "Congés" --start 2026-08-17T00:00:00 \
+  --end 2026-08-28T23:59:59 --category "Red category"
+
 # Modifier
 outlook-tool cal update <id> --subject "Point équipe (reporté)"
+
+# Changer la couleur (catégorie) d'un événement existant
+# --category remplace toujours la liste complète des catégories (pas d'ajout incrémental)
+# et peut être répété pour en assigner plusieurs
+outlook-tool cal update <id> --category "Blue category"
+
+# Retirer toute couleur/catégorie d'un événement
+outlook-tool cal update <id> --clear-categories
 
 # Supprimer
 outlook-tool cal delete <id>
 ```
+
+**Catégories (couleurs) :** `--category` assigne un ou plusieurs noms de catégories
+Outlook déjà définis dans le compte de l'utilisateur (ex. "Red category", "Important").
+Cet outil n'a pas de commande pour créer une catégorie ou choisir sa couleur associée :
+si le nom passé n'existe pas encore côté Outlook, Graph l'accepte quand même mais
+l'événement s'affichera sans couleur personnalisée jusqu'à ce que l'utilisateur crée
+cette catégorie depuis Outlook/Outlook Web. `--category` et `--clear-categories` sont
+mutuellement exclusifs sur `cal update`.
 
 ## Workflow type : invitations de réunion
 

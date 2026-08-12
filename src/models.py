@@ -184,6 +184,7 @@ class CalendarEventInput(BaseModel):
     location: str | None = None
     attendees: list[Recipient] = Field(default_factory=list)
     show_as: str | None = None  # free | tentative | busy | oof | workingElsewhere | unknown
+    categories: list[str] = Field(default_factory=list)
 
     @field_validator("show_as")
     @classmethod
@@ -215,6 +216,8 @@ class CalendarEventInput(BaseModel):
             ]
         if self.show_as is not None:
             event["showAs"] = self.show_as
+        if self.categories:
+            event["categories"] = self.categories
         return event
 
 
@@ -229,6 +232,7 @@ class CalendarEventSummary(BaseModel):
     end: str
     organizer: str
     location: str
+    categories: list[str] = Field(default_factory=list)
 
     @classmethod
     def from_graph(cls, item: dict[str, object]) -> CalendarEventSummary:
@@ -245,6 +249,8 @@ class CalendarEventSummary(BaseModel):
         location_name = ""
         if isinstance(location_obj, dict):
             location_name = str(location_obj.get("displayName", ""))
+        categories_obj = item.get("categories") or []
+        categories = [str(c) for c in categories_obj] if isinstance(categories_obj, list) else []
         return cls(
             id=str(item.get("id", "")),
             subject=str(item.get("subject") or "(no subject)"),
@@ -252,4 +258,5 @@ class CalendarEventSummary(BaseModel):
             end=str(end_obj.get("dateTime", "")) if isinstance(end_obj, dict) else "",
             organizer=organizer_addr,
             location=location_name,
+            categories=categories,
         )

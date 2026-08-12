@@ -544,9 +544,17 @@ def cal_list(
         table.add_column("end", style="cyan", no_wrap=True)
         table.add_column("subject")
         table.add_column("location")
+        table.add_column("categories")
         table.add_column("id", style="dim", no_wrap=True)
         for event in events:
-            table.add_row(event.start, event.end, event.subject, event.location, event.id[:16])
+            table.add_row(
+                event.start,
+                event.end,
+                event.subject,
+                event.location,
+                ", ".join(event.categories),
+                event.id[:16],
+            )
         console.print(table)
 
     _run(settings, _do)
@@ -565,6 +573,10 @@ def cal_add(
     show_as: Annotated[
         str | None, typer.Option("--show-as", help="Status: free|tentative|busy|oof|workingElsewhere|unknown")
     ] = None,
+    category: Annotated[
+        list[str] | None,
+        typer.Option("--category", help="Category name to assign (repeatable, e.g. --category 'Red category')"),
+    ] = None,
 ) -> None:
     """Create a calendar event."""
     settings: Settings = ctx.obj
@@ -577,6 +589,7 @@ def cal_add(
         body=body,
         attendees=[Recipient.parse(a) for a in (attendee or [])],
         show_as=show_as,
+        categories=category or [],
     )
 
     async def _do(_auth: Authenticator, _mail: MailService, cal: CalendarService) -> None:
@@ -597,9 +610,19 @@ def cal_update(
     show_as: Annotated[
         str | None, typer.Option("--show-as", help="Status: free|tentative|busy|oof|workingElsewhere|unknown")
     ] = None,
+    category: Annotated[
+        list[str] | None,
+        typer.Option("--category", help="Category name to assign (repeatable, replaces existing categories)"),
+    ] = None,
+    clear_categories: Annotated[
+        bool, typer.Option("--clear-categories", help="Remove all categories from the event")
+    ] = False,
 ) -> None:
     """Update fields on an existing event."""
     settings: Settings = ctx.obj
+    if category and clear_categories:
+        console.print("[red]cannot pass both --category and --clear-categories[/red]")
+        raise typer.Exit(code=2)
     changes: dict[str, Any] = {}
     if subject is not None:
         changes["subject"] = subject
@@ -609,8 +632,14 @@ def cal_update(
         changes["end"] = {"dateTime": end, "timeZone": tz}
     if show_as is not None:
         changes["showAs"] = show_as
+    if category:
+        changes["categories"] = category
+    elif clear_categories:
+        changes["categories"] = []
     if not changes:
-        console.print("[red]nothing to update; pass --subject/--start/--end/--show-as[/red]")
+        console.print(
+            "[red]nothing to update; pass --subject/--start/--end/--show-as/--category/--clear-categories[/red]"
+        )
         raise typer.Exit(code=2)
 
     async def _do(_auth: Authenticator, _mail: MailService, cal: CalendarService) -> None:

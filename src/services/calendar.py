@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_EVENT_SELECT = "id,subject,start,end,organizer,location"
+_EVENT_SELECT = "id,subject,start,end,organizer,location,categories"
 
 
 class CalendarService:
