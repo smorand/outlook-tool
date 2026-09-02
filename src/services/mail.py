@@ -9,6 +9,7 @@ from html.parser import HTMLParser
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlencode
 
+from graph_client import GraphError
 from models import Attachment, AttachmentSummary, MailSummary, OutgoingMessage
 from tracing import trace_span
 
@@ -305,9 +306,12 @@ class MailService:
         ):
             # Use the OData cast segment: Graph returns startDateTime/endDateTime
             # for event messages but rejects them in $select on /me/messages.
-            query2 = urlencode({"$select": _READ_SELECT_MEETING}, safe=" ,")
-            response2 = await self._graph.get(f"/me/messages/{message_id}/microsoft.graph.eventMessage?{query2}")
-            item = response2.json()
+            try:
+                query2 = urlencode({"$select": _READ_SELECT_MEETING}, safe=" ,")
+                response2 = await self._graph.get(f"/me/messages/{message_id}/microsoft.graph.eventMessage?{query2}")
+                item = response2.json()
+            except GraphError:
+                pass
         return item
 
     def body_as_text(self, item: dict[str, Any]) -> str:
