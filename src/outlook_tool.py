@@ -693,8 +693,11 @@ def cal_accept(ctx: typer.Context, event_id: Annotated[str, typer.Argument(help=
     settings: Settings = ctx.obj
 
     async def _do(_auth: Authenticator, _mail: MailService, cal: CalendarService) -> None:
-        await cal.accept_event(event_id)
-        console.print(f"[green]Accepted[/green] event id={event_id}")
+        status = await cal.accept_event(event_id)
+        if status is not None:
+            console.print(f"[green]Accepted[/green] event id={event_id} (confirmed status: {status})")
+        else:
+            console.print(f"[green]Accepted[/green] event id={event_id} (status could not be confirmed)")
 
     _run(settings, _do)
 

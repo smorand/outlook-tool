@@ -174,13 +174,27 @@ async def test_update_event_categories(settings: Settings, stub_auth: StubAuth) 
 
 @respx.mock
 async def test_accept_event(settings: Settings, stub_auth: StubAuth) -> None:
-    """accept_event POSTs to /me/events/{id}/accept with sendResponse=False."""
+    """accept_event POSTs to /me/events/{id}/accept with sendResponse=False and confirms status."""
     route = respx.post(f"{GRAPH}/me/events/E1/accept").mock(return_value=httpx.Response(202))
+    respx.get(url__regex=rf"{GRAPH}/me/events/E1\?.*").mock(
+        return_value=httpx.Response(200, json=_graph_event(responseStatus={"response": "accepted"}))
+    )
     async with httpx.AsyncClient() as client:
-        await _service(settings, stub_auth, client).accept_event("E1")
+        status = await _service(settings, stub_auth, client).accept_event("E1")
+    assert status == "Accepted"
     assert route.called
     body = json.loads(route.calls.last.request.content)
     assert body == {"sendResponse": False}
+
+
+@respx.mock
+async def test_accept_event_confirmation_fails(settings: Settings, stub_auth: StubAuth) -> None:
+    """SPEC-0004/E2E-010: accept_event returns None if the re-fetch raises GraphError."""
+    respx.post(f"{GRAPH}/me/events/E1/accept").mock(return_value=httpx.Response(202))
+    respx.get(url__regex=rf"{GRAPH}/me/events/E1\?.*").mock(return_value=httpx.Response(500))
+    async with httpx.AsyncClient() as client:
+        status = await _service(settings, stub_auth, client).accept_event("E1")
+    assert status is None
 
 
 def _graph_event(event_id: str = "E1", **overrides: object) -> dict[str, object]:

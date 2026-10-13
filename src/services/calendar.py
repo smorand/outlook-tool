@@ -6,6 +6,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlencode
 
+from graph_client import GraphError
 from models import CalendarEventInput, CalendarEventSummary
 from tracing import trace_span
 
@@ -75,8 +76,14 @@ class CalendarService:
             await self._graph.delete(f"/me/events/{event_id}")
             logger.info("deleted event id=%s", event_id)
 
-    async def accept_event(self, event_id: str) -> None:
-        """Accept a meeting invitation (no response email sent)."""
+    async def accept_event(self, event_id: str) -> str | None:
+        """Accept a meeting invitation and return the confirmed response status, or None if unconfirmable."""
         with trace_span("calendar.accept", attributes={"event.id": event_id}):
             await self._graph.post(f"/me/events/{event_id}/accept", json={"sendResponse": False})
             logger.info("accepted event id=%s", event_id)
+            try:
+                event = await self.get_event(event_id)
+            except GraphError:
+                logger.info("could not confirm response status for event id=%s", event_id)
+                return None
+            return event.response_status

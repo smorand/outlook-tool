@@ -730,14 +730,90 @@ def test_skill_learn_requires_rule(cli_env: Path) -> None:
 
 @respx.mock
 def test_cal_accept_command(cli_env: Path) -> None:
-    """cal accept POSTs to the accept endpoint and prints confirmation."""
+    """cal accept POSTs to the accept endpoint and prints the confirmed status."""
     route = respx.post(f"{GRAPH}/me/events/E99/accept").mock(return_value=httpx.Response(202))
+    respx.get(url__regex=rf"{GRAPH}/me/events/E99\?.*").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "id": "E99",
+                "subject": "Nuit",
+                "start": {"dateTime": "2026-07-29T03:00:00"},
+                "end": {"dateTime": "2026-07-29T03:30:00"},
+                "responseStatus": {"response": "accepted"},
+            },
+        )
+    )
     result = runner.invoke(app, ["cal", "accept", "E99"])
     assert result.exit_code == 0, result.stdout
     assert route.called
     body = json.loads(route.calls.last.request.content)
     assert body == {"sendResponse": False}
-    assert "E99" in result.stdout
+    assert "Accepted event id=E99 (confirmed status: Accepted)" in result.stdout
+
+
+@respx.mock
+def test_cal_accept_command_tentative_to_accepted(cli_env: Path) -> None:
+    """SPEC-0004/E2E-017: accepting a tentatively-accepted invitation confirms Accepted."""
+    respx.post(f"{GRAPH}/me/events/E98/accept").mock(return_value=httpx.Response(202))
+    respx.get(url__regex=rf"{GRAPH}/me/events/E98\?.*").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "id": "E98",
+                "subject": "Nuit",
+                "start": {"dateTime": "2026-07-29T03:00:00"},
+                "end": {"dateTime": "2026-07-29T03:30:00"},
+                "responseStatus": {"response": "accepted"},
+            },
+        )
+    )
+    result = runner.invoke(app, ["cal", "accept", "E98"])
+    assert result.exit_code == 0, result.stdout
+    assert "Accepted event id=E98 (confirmed status: Accepted)" in result.stdout
+
+
+@respx.mock
+def test_cal_accept_command_confirmation_fails(cli_env: Path) -> None:
+    """SPEC-0004/E2E-010: accept succeeds even when the confirmation re-fetch fails."""
+    respx.post(f"{GRAPH}/me/events/E97/accept").mock(return_value=httpx.Response(202))
+    respx.get(url__regex=rf"{GRAPH}/me/events/E97\?.*").mock(return_value=httpx.Response(500))
+    result = runner.invoke(app, ["cal", "accept", "E97"])
+    assert result.exit_code == 0, result.stdout
+    assert "Accepted event id=E97 (status could not be confirmed)" in result.stdout
+
+
+@respx.mock
+def test_cal_accept_command_unknown_id_fails(cli_env: Path) -> None:
+    """SPEC-0004/E2E-011/E2E-MOD-002: accept on an unknown id still fails; re-fetch never called."""
+    respx.post(f"{GRAPH}/me/events/E96/accept").mock(return_value=httpx.Response(404))
+    refetch_route = respx.get(url__regex=rf"{GRAPH}/me/events/E96\?.*").mock(return_value=httpx.Response(200))
+    result = runner.invoke(app, ["cal", "accept", "E96"])
+    assert result.exit_code != 0
+    assert "confirmed status" not in result.stdout
+    assert "could not be confirmed" not in result.stdout
+    assert not refetch_route.called
+
+
+@respx.mock
+def test_cal_accept_command_already_accepted(cli_env: Path) -> None:
+    """SPEC-0004/E2E-016: re-accepting an already-accepted event still confirms Accepted."""
+    respx.post(f"{GRAPH}/me/events/E95/accept").mock(return_value=httpx.Response(202))
+    respx.get(url__regex=rf"{GRAPH}/me/events/E95\?.*").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "id": "E95",
+                "subject": "Nuit",
+                "start": {"dateTime": "2026-07-29T03:00:00"},
+                "end": {"dateTime": "2026-07-29T03:30:00"},
+                "responseStatus": {"response": "accepted"},
+            },
+        )
+    )
+    result = runner.invoke(app, ["cal", "accept", "E95"])
+    assert result.exit_code == 0, result.stdout
+    assert "Accepted event id=E95 (confirmed status: Accepted)" in result.stdout
 
 
 # ---------------------------------------------------------------------------

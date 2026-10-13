@@ -4,7 +4,7 @@
 > Nature: FEAT
 > Depth: S
 > Depth evidence: one module (calendar), no public contract break (only additive), no new persisted concept, 5 anticipated requirements.
-> Status: designed
+> Status: implemented
 > Generated on: 2026-10-13
 > Project: existing
 > From backlog: BL-0017
