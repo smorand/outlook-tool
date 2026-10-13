@@ -19,7 +19,7 @@ from auth import Authenticator, DeviceCodePrompt, LoginRequiredError
 from config import Settings
 from graph_client import GraphClient
 from logging_config import setup_logging
-from models import Attachment, CalendarEventInput, OutgoingMessage, Recipient
+from models import Attachment, CalendarEventInput, CalendarEventSummary, OutgoingMessage, Recipient
 from services.calendar import CalendarService
 from services.mail import MailService
 from skill_cmd import register_skill_commands
@@ -75,6 +75,29 @@ def main(
     setup_logging(app_name=settings.app_name, verbosity=verbose, log_dir=settings.log_dir)
     configure_tracing(app_name=settings.app_name, log_dir=settings.log_dir)
     ctx.obj = settings
+
+
+def _render_event_table(events: list[CalendarEventSummary], title: str) -> None:
+    """Print events as a rich table (O(n) in the number of events)."""
+    table = Table(title=title)
+    table.add_column("start", style="cyan", no_wrap=True)
+    table.add_column("end", style="cyan", no_wrap=True)
+    table.add_column("subject")
+    table.add_column("location")
+    table.add_column("categories")
+    table.add_column("status")
+    table.add_column("id", style="dim", no_wrap=True)
+    for event in events:
+        table.add_row(
+            event.start,
+            event.end,
+            event.subject,
+            event.location,
+            ", ".join(event.categories),
+            event.response_status,
+            event.id[:16],
+        )
+    console.print(table)
 
 
 def _render_mail_table(messages: list[Any], title: str) -> None:
@@ -539,23 +562,26 @@ def cal_list(
         if as_json:
             typer.echo(json.dumps([e.model_dump() for e in events], ensure_ascii=False))
             return
-        table = Table(title=f"events {start} -> {end}")
-        table.add_column("start", style="cyan", no_wrap=True)
-        table.add_column("end", style="cyan", no_wrap=True)
-        table.add_column("subject")
-        table.add_column("location")
-        table.add_column("categories")
-        table.add_column("id", style="dim", no_wrap=True)
-        for event in events:
-            table.add_row(
-                event.start,
-                event.end,
-                event.subject,
-                event.location,
-                ", ".join(event.categories),
-                event.id[:16],
-            )
-        console.print(table)
+        _render_event_table(events, title=f"events {start} -> {end}")
+
+    _run(settings, _do)
+
+
+@cal_app.command("get")
+def cal_get(
+    ctx: typer.Context,
+    event_id: Annotated[str, typer.Argument(help="Event id")],
+    as_json: Annotated[bool, typer.Option("--json", help="Machine-readable JSON with full id")] = False,
+) -> None:
+    """Show one event by id, including its response status."""
+    settings: Settings = ctx.obj
+
+    async def _do(_auth: Authenticator, _mail: MailService, cal: CalendarService) -> None:
+        event = await cal.get_event(event_id)
+        if as_json:
+            typer.echo(json.dumps(event.model_dump(), ensure_ascii=False))
+            return
+        _render_event_table([event], title=f"event {event_id[:16]}")
 
     _run(settings, _do)
 

@@ -147,3 +147,26 @@ def test_mail_summary_is_meeting_request_false_for_regular_mail() -> None:
         }
     )
     assert summary.is_meeting_request is False
+
+
+def test_calendar_event_summary_unrecognized_response_status() -> None:
+    """SPEC-0004/E2E-014: an unrecognized raw response maps to 'Not yet responded'."""
+    summary = CalendarEventSummary.from_graph({"id": "E1", "responseStatus": {"response": "somethingUnexpected"}})
+    assert summary.response_status == "Not yet responded"
+
+
+def test_calendar_event_summary_response_status_vocabulary() -> None:
+    """SPEC-0004/FR-NEW-002: every raw shape maps to exactly one of the five labels."""
+    cases = {
+        "accepted": "Accepted",
+        "tentativelyAccepted": "Tentatively accepted",
+        "declined": "Declined",
+        "organizer": "Organizer",
+        "none": "Not yet responded",
+        "notResponded": "Not yet responded",
+    }
+    for raw, label in cases.items():
+        summary = CalendarEventSummary.from_graph({"id": "E1", "responseStatus": {"response": raw}})
+        assert summary.response_status == label
+    for malformed in ({}, {"responseStatus": "accepted"}, {"responseStatus": {}}, {"responseStatus": None}):
+        assert CalendarEventSummary.from_graph(malformed).response_status == "Not yet responded"

@@ -1,4 +1,4 @@
-"""Calendar operations on Microsoft Graph: list, create, update, delete."""
+"""Calendar operations on Microsoft Graph: list, get, create, update, delete, accept."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_EVENT_SELECT = "id,subject,start,end,organizer,location,categories"
+_EVENT_SELECT = "id,subject,start,end,organizer,location,categories,responseStatus"
 
 
 class CalendarService:
@@ -26,6 +26,13 @@ class CalendarService:
     def __init__(self, settings: Settings, graph: GraphClient) -> None:
         self._settings = settings
         self._graph = graph
+
+    async def get_event(self, event_id: str) -> CalendarEventSummary:
+        """Fetch one event by id; a missing or inaccessible id raises GraphError."""
+        with trace_span("calendar.get", attributes={"event.id": event_id}):
+            response = await self._graph.get(f"/me/events/{event_id}?$select={_EVENT_SELECT}")
+            logger.info("fetched event id=%s", event_id)
+            return CalendarEventSummary.from_graph(response.json())
 
     async def list_events(
         self, *, start: str, end: str, time_zone: str = "Europe/Paris", top: int = 50

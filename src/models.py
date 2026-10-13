@@ -221,6 +221,22 @@ class CalendarEventInput(BaseModel):
         return event
 
 
+_RESPONSE_STATUS_LABELS = {
+    "accepted": "Accepted",
+    "tentativelyAccepted": "Tentatively accepted",
+    "declined": "Declined",
+    "organizer": "Organizer",
+}
+_DEFAULT_RESPONSE_STATUS = "Not yet responded"
+
+
+def map_response_status(response_status: object) -> str:
+    """Map a Graph responseStatus object to its display label (O(1)); unknown shapes are 'Not yet responded'."""
+    if not isinstance(response_status, dict):
+        return _DEFAULT_RESPONSE_STATUS
+    return _RESPONSE_STATUS_LABELS.get(str(response_status.get("response")), _DEFAULT_RESPONSE_STATUS)
+
+
 class CalendarEventSummary(BaseModel):
     """A lightweight summary of a calendar event."""
 
@@ -233,6 +249,7 @@ class CalendarEventSummary(BaseModel):
     organizer: str
     location: str
     categories: list[str] = Field(default_factory=list)
+    response_status: str
 
     @classmethod
     def from_graph(cls, item: dict[str, object]) -> CalendarEventSummary:
@@ -259,4 +276,5 @@ class CalendarEventSummary(BaseModel):
             organizer=organizer_addr,
             location=location_name,
             categories=categories,
+            response_status=map_response_status(item.get("responseStatus")),
         )

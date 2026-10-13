@@ -66,8 +66,8 @@ non-zero and prints no event. None of these assertions mock the story's own outp
 `CalendarEventSummary` (`src/models.py:225-262`), add one field:
 
 ```python
-response_status: str   # one of: "Accepted", "Tentatively accepted", "Declined",
-                        # "Not yet responded", "Organizer"
+response_status: str  # one of: "Accepted", "Tentatively accepted", "Declined",
+# "Not yet responded", "Organizer"
 ```
 
 Add a module-level mapping function (name and exact signature at the implementer's discretion,

@@ -181,3 +181,55 @@ async def test_accept_event(settings: Settings, stub_auth: StubAuth) -> None:
     assert route.called
     body = json.loads(route.calls.last.request.content)
     assert body == {"sendResponse": False}
+
+
+def _graph_event(event_id: str = "E1", **overrides: object) -> dict[str, object]:
+    """Build a Graph event resource shaped like a real one."""
+    event: dict[str, object] = {
+        "id": event_id,
+        "subject": "Nuit",
+        "start": {"dateTime": "2026-07-29T03:00:00.0000000", "timeZone": "Europe/Paris"},
+        "end": {"dateTime": "2026-07-29T03:30:00.0000000", "timeZone": "Europe/Paris"},
+        "organizer": {"emailAddress": {"address": "me@corp.com"}},
+    }
+    event.update(overrides)
+    return event
+
+
+@respx.mock
+async def test_list_events_missing_response_status(settings: Settings, stub_auth: StubAuth) -> None:
+    """SPEC-0004/E2E-012: a missing responseStatus maps to 'Not yet responded' and selects the field."""
+    route = respx.get(url__regex=r".*/me/calendarView.*").mock(
+        return_value=httpx.Response(200, json={"value": [_graph_event()]})
+    )
+    async with httpx.AsyncClient() as client:
+        events = await _service(settings, stub_auth, client).list_events(
+            start="2026-07-29T00:00:00", end="2026-07-30T00:00:00"
+        )
+    assert events[0].response_status == "Not yet responded"
+    assert "responseStatus" in str(route.calls.last.request.url)
+
+
+@respx.mock
+async def test_list_events_response_status_with_malformed_fields(settings: Settings, stub_auth: StubAuth) -> None:
+    """SPEC-0004/E2E-018: malformed location/organizer do not prevent the response state."""
+    event = _graph_event(location="not-an-object", organizer=None, responseStatus={"response": "accepted"})
+    respx.get(url__regex=r".*/me/calendarView.*").mock(return_value=httpx.Response(200, json={"value": [event]}))
+    async with httpx.AsyncClient() as client:
+        events = await _service(settings, stub_auth, client).list_events(
+            start="2026-07-29T00:00:00", end="2026-07-30T00:00:00"
+        )
+    assert events[0].response_status == "Accepted"
+
+
+@respx.mock
+async def test_get_event_missing_response_status(settings: Settings, stub_auth: StubAuth) -> None:
+    """SPEC-0004/E2E-013: get_event fetches one event by id; missing state maps to 'Not yet responded'."""
+    route = respx.get(url__regex=rf"{GRAPH}/me/events/E1\?.*").mock(
+        return_value=httpx.Response(200, json=_graph_event())
+    )
+    async with httpx.AsyncClient() as client:
+        event = await _service(settings, stub_auth, client).get_event("E1")
+    assert event.id == "E1"
+    assert event.response_status == "Not yet responded"
+    assert "responseStatus" in str(route.calls.last.request.url)

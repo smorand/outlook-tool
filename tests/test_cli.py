@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 import httpx
 import pytest
 import respx
-from typer.testing import CliRunner
+from typer.testing import CliRunner, Result
 
 import outlook_tool
 from auth import TokenSet
@@ -838,3 +838,105 @@ def test_mail_get_json_exposes_meeting_datetimes(cli_env: Path) -> None:
     assert parsed["@odata.type"] == "#microsoft.graph.eventMessageRequest"
     assert parsed["startDateTime"]["dateTime"] == "2026-08-04T09:00:00.0000000"
     assert parsed["endDateTime"]["dateTime"] == "2026-08-04T10:00:00.0000000"
+
+
+def _cal_event(event_id: str, response: str | None) -> dict[str, object]:
+    """Build a Graph event resource shaped like a real one, optionally with a responseStatus."""
+    event: dict[str, object] = {
+        "id": event_id,
+        "subject": "Nuit",
+        "start": {"dateTime": "2026-07-29T03:00:00.0000000", "timeZone": "Europe/Paris"},
+        "end": {"dateTime": "2026-07-29T03:30:00.0000000", "timeZone": "Europe/Paris"},
+        "organizer": {"emailAddress": {"address": "me@corp.com"}},
+        "location": {"displayName": "Home"},
+    }
+    if response is not None:
+        event["responseStatus"] = {"response": response, "time": "2026-01-01T00:00:00Z"}
+    return event
+
+
+@pytest.fixture
+def wide_console(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Widen the shared rich console so table cells are not ellipsized under CliRunner."""
+    monkeypatch.setattr(outlook_tool.console, "_width", 250)
+
+
+def _invoke_cal_list(response: str, *extra: str) -> Result:
+    respx.get(url__regex=r".*/me/calendarView.*").mock(
+        return_value=httpx.Response(200, json={"value": [_cal_event("E1", response)]})
+    )
+    return runner.invoke(app, ["cal", "list", "--start", "2026-07-29T00:00:00", "--end", "2026-07-30T00:00:00", *extra])
+
+
+@pytest.mark.parametrize(
+    ("response", "label"),
+    [
+        ("accepted", "Accepted"),  # SPEC-0004/E2E-001
+        ("notResponded", "Not yet responded"),  # SPEC-0004/E2E-002
+        ("organizer", "Organizer"),  # SPEC-0004/E2E-003
+    ],
+)
+@respx.mock
+def test_cal_list_shows_response_status(cli_env: Path, wide_console: None, response: str, label: str) -> None:
+    """SPEC-0004/E2E-001..003: cal list shows each event's response state in a status column."""
+    result = _invoke_cal_list(response)
+    assert result.exit_code == 0, result.stdout
+    assert "status" in result.stdout
+    assert label in result.stdout
+
+
+@respx.mock
+def test_cal_list_json_has_response_status(cli_env: Path) -> None:
+    """SPEC-0004/E2E-004: cal list --json includes response_status."""
+    result = _invoke_cal_list("tentativelyAccepted", "--json")
+    assert result.exit_code == 0, result.stdout
+    assert json.loads(result.stdout)[0]["response_status"] == "Tentatively accepted"
+
+
+@pytest.mark.parametrize(
+    ("response", "label"),
+    [
+        ("tentativelyAccepted", "Tentatively accepted"),  # SPEC-0004/E2E-005
+        ("declined", "Declined"),  # SPEC-0004/E2E-008
+    ],
+)
+@respx.mock
+def test_cal_get_shows_response_status(cli_env: Path, wide_console: None, response: str, label: str) -> None:
+    """SPEC-0004/E2E-005, E2E-008: cal get prints a single-row table with the status."""
+    respx.get(url__regex=rf"{GRAPH}/me/events/E1\?.*").mock(
+        return_value=httpx.Response(200, json=_cal_event("E1", response))
+    )
+    result = runner.invoke(app, ["cal", "get", "E1"])
+    assert result.exit_code == 0, result.stdout
+    assert "status" in result.stdout
+    assert label in result.stdout
+    assert "Nuit" in result.stdout
+
+
+@respx.mock
+def test_cal_get_json_has_response_status(cli_env: Path) -> None:
+    """SPEC-0004/E2E-006: cal get --json emits one object with response_status."""
+    long_id = "E" * 80
+    respx.get(url__regex=rf"{GRAPH}/me/events/{long_id}\?.*").mock(
+        return_value=httpx.Response(200, json=_cal_event(long_id, "accepted"))
+    )
+    result = runner.invoke(app, ["cal", "get", long_id, "--json"])
+    assert result.exit_code == 0, result.stdout
+    parsed = json.loads(result.stdout)
+    assert parsed["id"] == long_id
+    assert parsed["response_status"] == "Accepted"
+
+
+@pytest.mark.parametrize("status_code", [404, 403])  # SPEC-0004/E2E-007, E2E-015
+@respx.mock
+def test_cal_get_unknown_or_forbidden_id_fails(cli_env: Path, status_code: int) -> None:
+    """SPEC-0004/E2E-007, E2E-015: an unknown or inaccessible id exits non-zero and prints no event."""
+    route = respx.get(url__regex=rf"{GRAPH}/me/events/BAD\?.*").mock(
+        return_value=httpx.Response(status_code, json={"error": {"code": "ErrorItemNotFound", "message": "nope"}})
+    )
+    result = runner.invoke(app, ["cal", "get", "BAD"])
+    assert route.called
+    assert result.exit_code != 0
+    assert "status" not in result.stdout
+    assert "response_status" not in result.stdout
+    assert result.stdout.strip() == ""
