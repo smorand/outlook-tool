@@ -197,6 +197,29 @@ async def test_accept_event_confirmation_fails(settings: Settings, stub_auth: St
     assert status is None
 
 
+@respx.mock
+async def test_deny_event(settings: Settings, stub_auth: StubAuth) -> None:
+    """deny_event POSTs to /me/events/{id}/decline with sendResponse=False and confirms status."""
+    route = respx.post(f"{GRAPH}/me/events/E1/decline").mock(return_value=httpx.Response(202))
+    respx.get(url__regex=rf"{GRAPH}/me/events/E1\?.*").mock(
+        return_value=httpx.Response(200, json=_graph_event(responseStatus={"response": "declined"}))
+    )
+    async with httpx.AsyncClient() as client:
+        status = await _service(settings, stub_auth, client).deny_event("E1")
+    assert status == "Declined"
+    assert json.loads(route.calls.last.request.content) == {"sendResponse": False}
+
+
+@respx.mock
+async def test_deny_event_confirmation_fails(settings: Settings, stub_auth: StubAuth) -> None:
+    """deny_event returns None if the re-fetch raises GraphError."""
+    respx.post(f"{GRAPH}/me/events/E1/decline").mock(return_value=httpx.Response(202))
+    respx.get(url__regex=rf"{GRAPH}/me/events/E1\?.*").mock(return_value=httpx.Response(500))
+    async with httpx.AsyncClient() as client:
+        status = await _service(settings, stub_auth, client).deny_event("E1")
+    assert status is None
+
+
 def _graph_event(event_id: str = "E1", **overrides: object) -> dict[str, object]:
     """Build a Graph event resource shaped like a real one."""
     event: dict[str, object] = {

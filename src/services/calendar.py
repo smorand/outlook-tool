@@ -78,9 +78,17 @@ class CalendarService:
 
     async def accept_event(self, event_id: str) -> str | None:
         """Accept a meeting invitation and return the confirmed response status, or None if unconfirmable."""
-        with trace_span("calendar.accept", attributes={"event.id": event_id}):
-            await self._graph.post(f"/me/events/{event_id}/accept", json={"sendResponse": False})
-            logger.info("accepted event id=%s", event_id)
+        return await self._respond_to_invitation(event_id, "accept")
+
+    async def deny_event(self, event_id: str) -> str | None:
+        """Decline a meeting invitation and return the confirmed response status, or None if unconfirmable."""
+        return await self._respond_to_invitation(event_id, "decline")
+
+    async def _respond_to_invitation(self, event_id: str, action: str) -> str | None:
+        """Answer an invitation without notifying the organizer, then re-read the resulting status."""
+        with trace_span(f"calendar.{action}", attributes={"event.id": event_id}):
+            await self._graph.post(f"/me/events/{event_id}/{action}", json={"sendResponse": False})
+            logger.info("%s event id=%s", action, event_id)
             try:
                 event = await self.get_event(event_id)
             except GraphError:

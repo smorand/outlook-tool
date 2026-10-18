@@ -687,17 +687,30 @@ def cal_delete(ctx: typer.Context, event_id: Annotated[str, typer.Argument(help=
     _run(settings, _do)
 
 
+def _print_response_confirmation(verb: str, event_id: str, status: str | None) -> None:
+    """Print the outcome of an invitation answer, with the confirmed status when known."""
+    detail = f"confirmed status: {status}" if status is not None else "status could not be confirmed"
+    console.print(f"[green]{verb}[/green] event id={event_id} ({detail})")
+
+
 @cal_app.command("accept")
 def cal_accept(ctx: typer.Context, event_id: Annotated[str, typer.Argument(help="Event id")]) -> None:
     """Accept a meeting invitation (no response email sent)."""
     settings: Settings = ctx.obj
 
     async def _do(_auth: Authenticator, _mail: MailService, cal: CalendarService) -> None:
-        status = await cal.accept_event(event_id)
-        if status is not None:
-            console.print(f"[green]Accepted[/green] event id={event_id} (confirmed status: {status})")
-        else:
-            console.print(f"[green]Accepted[/green] event id={event_id} (status could not be confirmed)")
+        _print_response_confirmation("Accepted", event_id, await cal.accept_event(event_id))
+
+    _run(settings, _do)
+
+
+@cal_app.command("deny")
+def cal_deny(ctx: typer.Context, event_id: Annotated[str, typer.Argument(help="Event id")]) -> None:
+    """Deny (decline) a meeting invitation (no response email sent)."""
+    settings: Settings = ctx.obj
+
+    async def _do(_auth: Authenticator, _mail: MailService, cal: CalendarService) -> None:
+        _print_response_confirmation("Declined", event_id, await cal.deny_event(event_id))
 
     _run(settings, _do)
 

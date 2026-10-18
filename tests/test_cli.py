@@ -817,6 +817,142 @@ def test_cal_accept_command_already_accepted(cli_env: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# cal deny
+# ---------------------------------------------------------------------------
+
+
+def _deny_event_json(event_id: str, response: str | None) -> dict[str, object]:
+    """Build a Graph event payload with the given raw response status."""
+    event: dict[str, object] = {
+        "id": event_id,
+        "subject": "Team sync",
+        "start": {"dateTime": "2026-07-29T03:00:00"},
+        "end": {"dateTime": "2026-07-29T03:30:00"},
+    }
+    if response is not None:
+        event["responseStatus"] = {"response": response}
+    return event
+
+
+def _mock_deny(event_id: str, *, post: int = 202, get: httpx.Response | None = None) -> tuple[respx.Route, respx.Route]:
+    """Mock the decline POST and the confirmation GET; return both routes."""
+    post_route = respx.post(f"{GRAPH}/me/events/{event_id}/decline").mock(return_value=httpx.Response(post))
+    get_route = respx.get(url__regex=rf"{GRAPH}/me/events/{event_id}\?.*").mock(
+        return_value=get or httpx.Response(200, json=_deny_event_json(event_id, "declined"))
+    )
+    return post_route, get_route
+
+
+@respx.mock
+def test_cal_deny_unanswered(cli_env: Path) -> None:
+    """SPEC-0005/E2E-001: deny prints the confirmed Declined status."""
+    _mock_deny("E1")
+    result = runner.invoke(app, ["cal", "deny", "E1"])
+    assert result.exit_code == 0, result.stdout
+    assert "Declined event id=E1 (confirmed status: Declined)" in result.stdout
+    assert "could not be confirmed" not in result.stdout
+
+
+@respx.mock
+def test_cal_deny_accepted_event(cli_env: Path) -> None:
+    """SPEC-0005/E2E-002: deny on a previously accepted event confirms Declined."""
+    _mock_deny("E2")
+    result = runner.invoke(app, ["cal", "deny", "E2"])
+    assert result.exit_code == 0, result.stdout
+    assert "Declined event id=E2 (confirmed status: Declined)" in result.stdout
+
+
+@respx.mock
+def test_cal_deny_unknown_id_fails(cli_env: Path) -> None:
+    """SPEC-0005/E2E-003: unknown id fails, no confirmation text, no re-check."""
+    _, get_route = _mock_deny("E96", post=404)
+    result = runner.invoke(app, ["cal", "deny", "E96"])
+    assert result.exit_code != 0
+    assert "confirmed status" not in result.stdout
+    assert "could not be confirmed" not in result.stdout
+    assert not get_route.called
+
+
+@respx.mock
+def test_cal_deny_confirmation_fails(cli_env: Path) -> None:
+    """SPEC-0005/E2E-004: a failing re-check still succeeds with the fallback message."""
+    _mock_deny("E97", get=httpx.Response(500))
+    result = runner.invoke(app, ["cal", "deny", "E97"])
+    assert result.exit_code == 0, result.stdout
+    assert "Declined event id=E97 (status could not be confirmed)" in result.stdout
+
+
+@respx.mock
+def test_cal_deny_refused_fails(cli_env: Path) -> None:
+    """SPEC-0005/E2E-005: a refused operation fails with no success message and no re-check."""
+    _, get_route = _mock_deny("E95", post=403)
+    result = runner.invoke(app, ["cal", "deny", "E95"])
+    assert result.exit_code != 0
+    assert "Declined event id=" not in result.stdout
+    assert not get_route.called
+
+
+@respx.mock
+def test_cal_deny_sends_no_response_email(cli_env: Path) -> None:
+    """SPEC-0005/E2E-006: the decline request asks Graph not to notify the organizer."""
+    post_route, _ = _mock_deny("E1")
+    result = runner.invoke(app, ["cal", "deny", "E1"])
+    assert result.exit_code == 0, result.stdout
+    assert json.loads(post_route.calls.last.request.content) == {"sendResponse": False}
+
+
+@respx.mock
+def test_cal_deny_already_declined(cli_env: Path) -> None:
+    """SPEC-0005/E2E-007: denying an already declined event succeeds and confirms Declined."""
+    _mock_deny("E3")
+    result = runner.invoke(app, ["cal", "deny", "E3"])
+    assert result.exit_code == 0, result.stdout
+    assert "Declined event id=E3 (confirmed status: Declined)" in result.stdout
+
+
+@respx.mock
+def test_cal_deny_unrecognised_state(cli_env: Path) -> None:
+    """SPEC-0005/E2E-008: an unknown state after the refusal reads 'Not yet responded'."""
+    _mock_deny("E4", get=httpx.Response(200, json=_deny_event_json("E4", "somethingNew")))
+    result = runner.invoke(app, ["cal", "deny", "E4"])
+    assert result.exit_code == 0, result.stdout
+    assert "Declined event id=E4 (confirmed status: Not yet responded)" in result.stdout
+
+
+@respx.mock
+def test_cal_deny_then_get_and_list_show_declined(cli_env: Path) -> None:
+    """SPEC-0005/E2E-009: after a deny, cal get and cal list both show Declined."""
+    _mock_deny("E2")
+    respx.get(url__regex=r".*/me/calendarView.*").mock(
+        return_value=httpx.Response(200, json={"value": [_deny_event_json("E2", "declined")]})
+    )
+    assert runner.invoke(app, ["cal", "deny", "E2"]).exit_code == 0
+    got = runner.invoke(app, ["cal", "get", "E2", "--json"])
+    assert json.loads(got.stdout)["response_status"] == "Declined"
+    listed = runner.invoke(
+        app, ["cal", "list", "--start", "2026-07-29T00:00:00", "--end", "2026-07-30T00:00:00", "--json"]
+    )
+    assert json.loads(listed.stdout)[0]["response_status"] == "Declined"
+
+
+@respx.mock
+def test_cal_deny_confirmation_fails_on_accepted_event(cli_env: Path) -> None:
+    """SPEC-0005/E2E-010: re-check failure after denying an accepted event still succeeds."""
+    _mock_deny("E5", get=httpx.Response(500))
+    result = runner.invoke(app, ["cal", "deny", "E5"])
+    assert result.exit_code == 0, result.stdout
+    assert "Declined event id=E5 (status could not be confirmed)" in result.stdout
+
+
+@respx.mock
+def test_cal_deny_requires_id(cli_env: Path) -> None:
+    """SPEC-0005/E2E-011: a missing id is a usage error and calls nothing."""
+    result = runner.invoke(app, ["cal", "deny"])
+    assert result.exit_code == 2
+    assert not respx.calls
+
+
+# ---------------------------------------------------------------------------
 # mail read strips HTML
 # ---------------------------------------------------------------------------
 
