@@ -682,6 +682,13 @@ def test_skill_prints_embedded(cli_env: Path) -> None:
     assert "outlook-tool" in result.stdout.lower()
 
 
+def test_skill_documents_cal_deny(cli_env: Path) -> None:
+    """SPEC-0005: the embedded manual lets agents discover cal deny."""
+    result = runner.invoke(app, ["skill"])
+    assert result.exit_code == 0, result.stdout
+    assert "deny <id>" in result.stdout
+
+
 def test_skill_includes_user_knowledge(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """skill concatenates .md files from XDG_CONFIG_HOME/outlook-tool."""
     monkeypatch.chdir(tmp_path)

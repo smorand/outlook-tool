@@ -23,7 +23,7 @@ make install   # installe la commande 'outlook-tool' (uv tool)
 - `outlook_tool.py` : entry point Typer. Commandes: `login`, `send`, `draft`,
   `draft-update` (corps: remplacement complet; PJ: `--add-attach`/`--remove-attach`),
   `draft-send` (envoie un brouillon existant), `version`,
-  `mail list|get|read|search|archive|move|trash|mark-read|mark-unread|flag|attachments|download`, `cal add|list|update|delete`,
+  `mail list|get|read|search|archive|move|trash|mark-read|mark-unread|flag|attachments|download`, `cal add|list|get|update|delete|accept|deny`,
   `skill|skill learn`. Injection de dépendances dans
   `_with_services` (crée httpx client, Authenticator, GraphClient, services).
 - `config.py` : `Settings` (pydantic-settings, prefix `OUTLOOK_TOOL_`). Client ID Office

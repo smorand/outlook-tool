@@ -70,6 +70,8 @@ outlook-tool cal add --subject "Congés" --start ... --end ... --category "Red c
 outlook-tool cal update <event-id> --category "Blue category"   # remplace toutes les catégories (couleur Outlook)
 outlook-tool cal update <event-id> --clear-categories            # retire toute catégorie
 outlook-tool cal delete <event-id>
+outlook-tool cal accept <event-id>   # accepte une invitation, sans mail à l'organisateur
+outlook-tool cal deny <event-id>     # refuse une invitation (acceptée ou non), sans mail à l'organisateur
 ```
 
 Verbosité (silencieux par défaut): sans flag = erreurs seulement, `-v` = info, `-vv` = debug.

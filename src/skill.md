@@ -59,7 +59,8 @@ outlook-tool
     ├── add --subject ... --start ISO --end ISO [--tz TZ] [--location ...] [--body ...] [--attendee ...]
     ├── update <id> [--subject ...] [--start ISO] [--end ISO] [--tz TZ]
     ├── delete <id>
-    └── accept <id>                   # Accepter une invitation de réunion (sans envoyer de réponse)
+    ├── accept <id>                   # Accepter une invitation de réunion (sans envoyer de réponse)
+    └── deny <id>                     # Refuser une invitation (acceptée ou non), sans envoyer de réponse
 ```
 
 Toute commande accepte `--help` pour voir les options détaillées.
@@ -212,6 +213,7 @@ outlook-tool mail archive <mail_id>
 
 **Note :** `cal accept <id>` prend l'**event id** (calendrier), pas le mail id.
 Récupérer l'event id via `cal list` sur le créneau de l'invitation.
+`cal deny <id>` refuse l'invitation (déjà acceptée ou non), avec le même event id, sans réponse à l'organisateur.
 
 ## Dossiers bien connus (--folder et move)
 
