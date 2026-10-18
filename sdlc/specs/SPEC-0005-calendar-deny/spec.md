@@ -4,7 +4,7 @@
 > Nature: FEAT
 > Depth: S
 > Depth evidence: 1 behavior (refuse an invitation), 1 module (calendar), 4 requirements, no persisted change.
-> Status: specified
+> Status: designed
 > Generated on: 2026-10-18
 > Project: existing
 > From backlog: n/a
