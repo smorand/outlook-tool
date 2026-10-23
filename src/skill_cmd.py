@@ -17,6 +17,7 @@ import typer
 
 _SKILL_CONFIG_DIR = "outlook-tool"
 _SKILL_RULES_FILE = "regles-tri.md"
+_SKILL_SIGNATURE_FILE = "signature.html"
 _DIR_PERM = 0o755
 _FILE_PERM = 0o644
 
@@ -60,6 +61,33 @@ def register_skill_commands(app: typer.Typer) -> None:
         typer.echo(_load_embedded_skill())
 
         config_dir = _skill_config_dir()
+
+        # Inject signature if present
+        sig_path = config_dir / _SKILL_SIGNATURE_FILE
+        if sig_path.is_file():
+            try:
+                sig_content = sig_path.read_text(encoding="utf-8").rstrip("\n")
+                typer.echo()
+                typer.echo("---")
+                typer.echo()
+                typer.echo("## Signature utilisateur")
+                typer.echo()
+                typer.echo("Contenu de `~/.config/outlook-tool/signature.html` à insérer tel quel à la fin du corps HTML :")
+                typer.echo()
+                typer.echo("```html")
+                typer.echo(sig_content)
+                typer.echo("```")
+            except OSError as exc:
+                print(f"Warning: cannot read {sig_path}: {exc}", file=sys.stderr)
+        else:
+            typer.echo()
+            typer.echo("---")
+            typer.echo()
+            typer.echo(
+                "⚠️  Signature non configurée : créer `~/.config/outlook-tool/signature.html`"
+                " avec le HTML de la signature à utiliser dans les emails."
+            )
+
         knowledge_files = _iter_knowledge_files(config_dir)
         if not knowledge_files:
             return

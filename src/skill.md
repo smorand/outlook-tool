@@ -371,30 +371,32 @@ Exemple de structure minimale :
 
 <p>Lien : <a href="https://...">Nom du document</a></p>
 
-<p>--<br>
-Associate Partner Chief Architect IBM - Strategic AI Partners<br>
-IBM France - Consulting<br>
-17, avenue de l'Europe, 92275 Bois-Colombes Cedex<br>
-Tél : +33 6 12 03 41 15</p>
+<!-- signature ici — voir section suivante -->
 ```
 
 ## Signature pro obligatoire
 
 Tout email envoyé ou mis en brouillon pour l'utilisateur (`send`, `draft`,
-`draft-update`) doit se terminer par cette signature HTML, ajoutée par l'agent dans le
-corps **avant** l'appel à la commande (l'outil ne l'insère jamais automatiquement) :
+`draft-update`) doit se terminer par la signature de l'utilisateur, ajoutée par
+l'agent dans le corps **avant** l'appel à la commande (l'outil ne l'insère jamais
+automatiquement).
 
-```html
-<p>--<br>
-Associate Partner Chief Architect IBM - Strategic AI Partners<br>
-IBM France - Consulting<br>
-17, avenue de l'Europe, 92275 Bois-Colombes Cedex<br>
-Tél : +33 6 12 03 41 15</p>
+La signature est définie par l'utilisateur dans :
+
+```
+~/.config/outlook-tool/signature.html
 ```
 
-Ne pas la dupliquer si le corps existant en contient déjà une (cas d'une citation de
-reply qui inclurait déjà la signature du message précédent, ou d'un `draft-update` sur
-un brouillon qui l'a déjà). Vérifier le corps actuel avant d'ajouter la signature.
+Son contenu est affiché en bas de cette skill (section « Signature utilisateur »)
+lorsqu'il est présent. Copier-coller ce contenu tel quel à la fin du corps HTML.
+
+Si le fichier est absent : signaler à l'utilisateur que la signature n'est pas
+configurée et lui demander de créer `~/.config/outlook-tool/signature.html`.
+
+Ne pas dupliquer la signature si le corps existant en contient déjà une (cas d'une
+citation de reply qui inclurait déjà la signature du message précédent, ou d'un
+`draft-update` sur un brouillon qui l'a déjà). Vérifier le corps actuel avant
+d'ajouter la signature.
 
 ---
 
